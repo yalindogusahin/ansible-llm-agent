@@ -132,6 +132,87 @@ ansible-galaxy collection install yalindogusahin-ansible_ai-*.tar.gz
 it (or set false) and `register: r` + `r.diagnosis` if you want the result
 in a variable instead.
 
+## `ai_agent` task parameters
+
+| Parameter | Type | Default | Required | Description |
+|---|---|---|---|---|
+| `prompt` | str | — | yes | Natural-language instruction telling the agent what to investigate or do. |
+| `provider` | str (`claude`/`anthropic`/`openai`/`bedrock`/`ollama`) | `claude` | no | LLM backend. `anthropic` is an alias for `claude`. |
+| `model` | str | provider default | no | Model name. Defaults: `claude-opus-4-7`, `gpt-4o`, `llama3.1`, `anthropic.claude-3-5-sonnet-20241022-v2:0`. |
+| `endpoint` | str | env or provider default | no | HTTP base URL override. Useful for self-hosted vLLM, on-prem Ollama, regional Bedrock endpoints. |
+| `api_key` | str | env | no | Provider API key. Overrides `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `ANTHROPIC_AUTH_TOKEN`. Prefer env or vault for secrets. |
+| `rules` | dict | `{}` | no | Allow/deny rule overrides. Merged with collection defaults and `ansible_ai_rules` from group_vars/host_vars/play vars. Deny wins on conflict. See [Permission model](#permission-model). |
+| `max_iterations` | int | 5 | no | Hard cap on LLM round-trips per host. |
+| `max_tokens` | int | 8000 | no | Total token budget (input + output) per host across all iterations. When exceeded the loop stops. |
+| `timeout` | int | 30 | no | Per-snippet execution timeout in seconds on the target host. |
+| `print_result` | bool | false | no | When true, write the final diagnosis line to ansible output so you don't need a separate `register` + `debug` task. |
+
+`ansible-doc yalindogusahin.ansible_ai.ai_agent` renders the same table at the CLI.
+
+## Examples
+
+**1. Single-line diagnosis on every host:**
+
+```yaml
+- hosts: all
+  tasks:
+    - yalindogusahin.ansible_ai.ai_agent:
+        prompt: "What is consuming the most memory on this host?"
+        print_result: true
+```
+
+**2. Investigation with bigger budget on a verbose model:**
+
+```yaml
+- hosts: kafka
+  tasks:
+    - yalindogusahin.ansible_ai.ai_agent:
+        prompt: "Connect cannot reach broker. Find why."
+        provider: claude
+        model: claude-opus-4-7
+        max_iterations: 8
+        max_tokens: 30000
+        print_result: true
+```
+
+**3. Local vLLM (OpenAI-compatible) instead of public API:**
+
+```yaml
+- yalindogusahin.ansible_ai.ai_agent:
+    prompt: "List top 3 processes by CPU"
+    provider: openai
+    model: Qwen/Qwen3.6-35B-A3B-FP8
+    endpoint: "http://10.0.0.10:8000/v1"
+    api_key: dummy
+    print_result: true
+```
+
+**4. Run as root with tight allow list (docker investigation):**
+
+```yaml
+- hosts: dev
+  become: true
+  tasks:
+    - yalindogusahin.ansible_ai.ai_agent:
+        prompt: "Inspect docker container 'web' and report on its health."
+        rules:
+          allow:
+            run_cmd: [docker, ps, cat, ls, head, tail]
+            python: [subprocess, json, os]
+        print_result: true
+```
+
+**5. Capture the result in a variable instead of printing:**
+
+```yaml
+- yalindogusahin.ansible_ai.ai_agent:
+    prompt: "Summarize disk usage by mount point"
+  register: r
+
+- ansible.builtin.debug:
+    var: r.diagnosis
+```
+
 ## Returned shape
 
 ```yaml
