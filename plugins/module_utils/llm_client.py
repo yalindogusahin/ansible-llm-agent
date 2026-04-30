@@ -12,16 +12,16 @@ is responsible for prompt accumulation and JSON parsing (see prompts.parse_actio
 Auth comes from env vars; nothing is logged. Provider is selected by:
   task arg `provider` > env ANSIBLE_AI_PROVIDER > "claude" default.
 """
+
 from __future__ import annotations
 
 import json
 import os
-import urllib.request
 import urllib.error
+import urllib.request
 from abc import ABC, abstractmethod
 from dataclasses import dataclass
 from typing import Any
-
 
 DEFAULT_MODELS = {
     "claude": "claude-opus-4-7",
@@ -45,9 +45,17 @@ class Completion:
 class LLMClient(ABC):
     name: str = ""
 
-    def __init__(self, model: str | None = None, timeout: int = 60):
+    def __init__(
+        self,
+        model: str | None = None,
+        timeout: int = 60,
+        endpoint: str | None = None,
+        api_key: str | None = None,
+    ):
         self.model = model or DEFAULT_MODELS[self.name]
         self.timeout = timeout
+        self.endpoint = endpoint
+        self.api_key = api_key
 
     @abstractmethod
     def complete(self, system: str, messages: list[dict[str, str]], max_tokens: int) -> Completion: ...
@@ -69,10 +77,13 @@ class ClaudeClient(LLMClient):
     name = "claude"
 
     def complete(self, system: str, messages: list[dict[str, str]], max_tokens: int) -> Completion:
-        api_key = os.environ.get("ANTHROPIC_API_KEY")
+        api_key = (
+            self.api_key or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+        )
         if not api_key:
-            raise LLMError("ANTHROPIC_API_KEY not set")
-        url = os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com") + "/v1/messages"
+            raise LLMError("ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN not set")
+        base = self.endpoint or os.environ.get("ANTHROPIC_BASE_URL", "https://api.anthropic.com")
+        url = base.rstrip("/") + "/v1/messages"
         headers = {
             "x-api-key": api_key,
             "anthropic-version": "2023-06-01",
@@ -104,10 +115,11 @@ class OpenAIClient(LLMClient):
     name = "openai"
 
     def complete(self, system: str, messages: list[dict[str, str]], max_tokens: int) -> Completion:
-        api_key = os.environ.get("OPENAI_API_KEY")
+        api_key = self.api_key or os.environ.get("OPENAI_API_KEY")
         if not api_key:
             raise LLMError("OPENAI_API_KEY not set")
-        url = os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1") + "/chat/completions"
+        base = self.endpoint or os.environ.get("OPENAI_BASE_URL", "https://api.openai.com/v1")
+        url = base.rstrip("/") + "/chat/completions"
         headers = {
             "authorization": f"Bearer {api_key}",
             "content-type": "application/json",
@@ -118,7 +130,7 @@ class OpenAIClient(LLMClient):
             "messages": [{"role": "system", "content": system}] + messages,
         }
         resp = self._post_json(url, headers, body)
-        choice = resp["choices"][0]["message"]["content"]
+        choice = resp["choices"][0]["message"].get("content") or ""
         usage = resp.get("usage", {})
         return Completion(
             text=choice,
@@ -131,7 +143,8 @@ class OllamaClient(LLMClient):
     name = "ollama"
 
     def complete(self, system: str, messages: list[dict[str, str]], max_tokens: int) -> Completion:
-        url = os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434") + "/api/chat"
+        base = self.endpoint or os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
+        url = base.rstrip("/") + "/api/chat"
         headers = {"content-type": "application/json"}
         body = {
             "model": self.model,
@@ -190,8 +203,14 @@ _REGISTRY: dict[str, type[LLMClient]] = {
 }
 
 
-def get_client(provider: str | None = None, model: str | None = None, timeout: int = 60) -> LLMClient:
+def get_client(
+    provider: str | None = None,
+    model: str | None = None,
+    timeout: int = 60,
+    endpoint: str | None = None,
+    api_key: str | None = None,
+) -> LLMClient:
     p = (provider or os.environ.get("ANSIBLE_AI_PROVIDER") or "claude").lower()
     if p not in _REGISTRY:
         raise LLMError(f"unknown provider: {p}; known: {sorted(_REGISTRY)}")
-    return _REGISTRY[p](model=model, timeout=timeout)
+    return _REGISTRY[p](model=model, timeout=timeout, endpoint=endpoint, api_key=api_key)

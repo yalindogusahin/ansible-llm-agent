@@ -1,0 +1,11 @@
+---
+# ansible_ai_rules is intentionally a top-level (global) variable, not a role-scoped one,
+# so the no-role-prefix rule does not apply.
+skip_list:
+  - var-naming[no-role-prefix]
+
+exclude_paths:
+  - .git/
+  - .venv/
+  - .pytest_cache/
+  - tests/integration/inventory.ini

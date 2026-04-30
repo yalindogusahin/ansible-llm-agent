@@ -8,9 +8,11 @@ Two layers:
      available isolation: bwrap > firejail > nsjail > in-process rlimit.
      Network unshare toggled by rules.allow.network.
 """
+
 from __future__ import annotations
 
 import ast
+import contextlib
 import os
 import shutil
 import subprocess
@@ -21,14 +23,50 @@ from typing import Any
 
 from . import rules as rules_mod
 
-
 SAFE_BUILTINS = {
-    "abs", "all", "any", "bool", "dict", "enumerate", "filter", "float",
-    "frozenset", "int", "isinstance", "issubclass", "iter", "len", "list",
-    "map", "max", "min", "next", "open", "print", "range", "repr",
-    "reversed", "round", "set", "slice", "sorted", "str", "sum", "tuple",
-    "zip", "type", "hasattr", "getattr", "setattr", "format", "bytes",
-    "Exception", "ValueError", "RuntimeError", "KeyError", "IndexError",
+    "abs",
+    "all",
+    "any",
+    "bool",
+    "dict",
+    "enumerate",
+    "filter",
+    "float",
+    "frozenset",
+    "int",
+    "isinstance",
+    "issubclass",
+    "iter",
+    "len",
+    "list",
+    "map",
+    "max",
+    "min",
+    "next",
+    "open",
+    "print",
+    "range",
+    "repr",
+    "reversed",
+    "round",
+    "set",
+    "slice",
+    "sorted",
+    "str",
+    "sum",
+    "tuple",
+    "zip",
+    "type",
+    "hasattr",
+    "getattr",
+    "setattr",
+    "format",
+    "bytes",
+    "Exception",
+    "ValueError",
+    "RuntimeError",
+    "KeyError",
+    "IndexError",
 }
 
 DANGEROUS_BUILTINS = {"eval", "exec", "compile", "__import__", "globals", "locals", "vars", "memoryview"}
@@ -82,10 +120,18 @@ def _first_argv0(node: ast.Call) -> str | None:
 
 
 SUBPROCESS_FUNCS = {
-    "subprocess.run", "subprocess.Popen", "subprocess.call",
-    "subprocess.check_call", "subprocess.check_output",
-    "os.system", "os.popen", "os.execv", "os.execvp", "os.execve",
-    "os.spawnv", "os.spawnvp",
+    "subprocess.run",
+    "subprocess.Popen",
+    "subprocess.call",
+    "subprocess.check_call",
+    "subprocess.check_output",
+    "os.system",
+    "os.popen",
+    "os.execv",
+    "os.execvp",
+    "os.execve",
+    "os.spawnv",
+    "os.spawnvp",
 }
 
 
@@ -97,7 +143,7 @@ def validate_ast(code: str, rules: dict[str, Any]) -> None:
         raise SandboxViolation(f"syntax error: {e}") from e
 
     for node in ast.walk(tree):
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
+        if isinstance(node, ast.Import | ast.ImportFrom):
             modules = []
             if isinstance(node, ast.Import):
                 modules = [alias.name for alias in node.names]
@@ -106,15 +152,14 @@ def validate_ast(code: str, rules: dict[str, Any]) -> None:
                     modules = [node.module]
             for m in modules:
                 if not rules_mod.is_python_import_allowed(rules, m):
-                    raise SandboxViolation(
-                        f"import not allowed: {m}", where=f"line {node.lineno}"
-                    )
+                    raise SandboxViolation(f"import not allowed: {m}", where=f"line {node.lineno}")
 
-        if isinstance(node, ast.Name) and node.id in DANGEROUS_BUILTINS:
-            if not rules_mod.is_python_import_allowed(rules, f"__builtins__.{node.id}"):
-                raise SandboxViolation(
-                    f"builtin not allowed: {node.id}", where=f"line {node.lineno}"
-                )
+        if (
+            isinstance(node, ast.Name)
+            and node.id in DANGEROUS_BUILTINS
+            and not rules_mod.is_python_import_allowed(rules, f"__builtins__.{node.id}")
+        ):
+            raise SandboxViolation(f"builtin not allowed: {node.id}", where=f"line {node.lineno}")
 
         if isinstance(node, ast.Call):
             chain = None
@@ -130,17 +175,29 @@ def validate_ast(code: str, rules: dict[str, Any]) -> None:
                         where=f"line {node.lineno}",
                     )
                 if not rules_mod.is_cmd_allowed(rules, argv0):
-                    raise SandboxViolation(
-                        f"command not allowed: {argv0}", where=f"line {node.lineno}"
-                    )
+                    raise SandboxViolation(f"command not allowed: {argv0}", where=f"line {node.lineno}")
+
+
+def _probe(cmd: list[str]) -> bool:
+    try:
+        proc = subprocess.run(cmd, capture_output=True, timeout=5)
+        return proc.returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired, PermissionError):
+        return False
 
 
 def detect_isolation() -> str:
-    if shutil.which("bwrap"):
+    """Detect strongest *working* isolation tool.
+
+    Mere presence on PATH is not enough: AppArmor/userns restrictions
+    (e.g. Ubuntu 24's kernel.apparmor_restrict_unprivileged_userns=1) can
+    make bwrap installable but unusable. Probe before committing.
+    """
+    if shutil.which("bwrap") and _probe(["bwrap", "--bind", "/", "/", "--", "true"]):
         return "bwrap"
-    if shutil.which("firejail"):
+    if shutil.which("firejail") and _probe(["firejail", "--quiet", "--noprofile", "true"]):
         return "firejail"
-    if shutil.which("nsjail"):
+    if shutil.which("nsjail") and _probe(["nsjail", "--really_quiet", "--", "/bin/true"]):
         return "nsjail"
     return "rlimit"
 
@@ -148,23 +205,49 @@ def detect_isolation() -> str:
 def _bwrap_cmd(script_path: str, allow_network: bool, rules: dict[str, Any]) -> list[str]:
     cmd = [
         "bwrap",
-        "--ro-bind", "/usr", "/usr",
-        "--ro-bind", "/lib", "/lib",
-        "--ro-bind", "/lib64", "/lib64",
-        "--ro-bind", "/bin", "/bin",
-        "--ro-bind", "/sbin", "/sbin",
-        "--ro-bind", "/etc", "/etc",
-        "--proc", "/proc",
-        "--dev", "/dev",
-        "--tmpfs", "/tmp",
-        "--ro-bind", "/var/log", "/var/log",
-        "--ro-bind", "/sys", "/sys",
+        "--ro-bind",
+        "/usr",
+        "/usr",
+        "--ro-bind",
+        "/lib",
+        "/lib",
+        "--ro-bind",
+        "/lib64",
+        "/lib64",
+        "--ro-bind",
+        "/bin",
+        "/bin",
+        "--ro-bind",
+        "/sbin",
+        "/sbin",
+        "--ro-bind",
+        "/etc",
+        "/etc",
+        "--proc",
+        "/proc",
+        "--dev",
+        "/dev",
+        "--tmpfs",
+        "/tmp",
+        "--ro-bind",
+        "/var/log",
+        "/var/log",
+        "--ro-bind",
+        "/sys",
+        "/sys",
         "--die-with-parent",
         "--unshare-pid",
         "--unshare-ipc",
         "--unshare-uts",
     ]
-    if not allow_network:
+    # NOTE: --unshare-net is not used by default. Many distros (Ubuntu 24+ with
+    # AppArmor restrictions) reject loopback setup inside a new netns from an
+    # unprivileged process, breaking even read-only snippets that import
+    # subprocess. Network egress is instead gated at the rule layer:
+    # disallowed argv[0] (curl/wget/etc.) is rejected by validate_ast before
+    # we ever reach exec. Set ANSIBLE_AI_BWRAP_UNSHARE_NET=1 to force netns
+    # isolation on hosts that support it.
+    if not allow_network and os.environ.get("ANSIBLE_AI_BWRAP_UNSHARE_NET") == "1":
         cmd += ["--unshare-net"]
     for path in rules["allow"].get("write_file", []):
         if path.startswith("/") and "*" not in path:
@@ -195,9 +278,7 @@ def run(code: str, rules: dict[str, Any], timeout: int = 30) -> SandboxResult:
     isolation = detect_isolation()
     allow_network = bool(rules["allow"].get("network", False))
 
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".py", prefix="ansible_ai_", delete=False
-    ) as f:
+    with tempfile.NamedTemporaryFile(mode="w", suffix=".py", prefix="ansible_ai_", delete=False) as f:
         f.write(code)
         script_path = f.name
 
@@ -233,7 +314,5 @@ def run(code: str, rules: dict[str, Any], timeout: int = 30) -> SandboxResult:
             exit=proc.returncode,
         )
     finally:
-        try:
+        with contextlib.suppress(OSError):
             os.unlink(script_path)
-        except OSError:
-            pass

@@ -1,5 +1,5 @@
 ---
-- name: ai_agent end-to-end smoke
+- name: AI agent end-to-end smoke
   hosts: kafka
   gather_facts: true
   roles:
@@ -16,14 +16,14 @@
       register: agent_result
 
     - name: Show diagnosis
-      debug:
+      ansible.builtin.debug:
         msg: "{{ inventory_hostname }} -> {{ agent_result.diagnosis }}"
 
     - name: Show transcript step count
-      debug:
+      ansible.builtin.debug:
         msg: "{{ inventory_hostname }} steps={{ agent_result.iterations_used }} tokens={{ agent_result.tokens_used }}"
 
-- name: Negative path - rule blocks cat
+- name: Negative path rule blocks cat
   hosts: kafka_broker
   gather_facts: false
   tasks:
@@ -37,7 +37,7 @@
       register: blocked_result
 
     - name: Assert at least one step was blocked by rule
-      assert:
+      ansible.builtin.assert:
         that:
           - blocked_result.transcript | selectattr('blocked_by_rule', 'defined') | list | length > 0
         fail_msg: "expected at least one transcript entry to carry blocked_by_rule"
@@ -53,6 +53,6 @@
       register: budget_result
 
     - name: Assert at most one iteration ran
-      assert:
+      ansible.builtin.assert:
         that:
           - budget_result.iterations_used <= 1

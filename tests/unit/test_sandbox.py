@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from ansible_collections.ysahin.ansible_ai.plugins.module_utils import rules as rmod
 from ansible_collections.ysahin.ansible_ai.plugins.module_utils import sandbox as smod
 

@@ -1,22 +1,38 @@
 """System prompt construction and JSON action parsing for ansible_ai."""
+
 from __future__ import annotations
 
 import json
 import re
 from typing import Any
 
-
 SECRET_KEY_PATTERNS = (
-    "password", "passwd", "secret", "token", "api_key", "apikey",
-    "credential", "auth", "private", "ssh_key", "cert_key",
+    "password",
+    "passwd",
+    "secret",
+    "token",
+    "api_key",
+    "apikey",
+    "credential",
+    "auth",
+    "private",
+    "ssh_key",
+    "cert_key",
 )
 
 DEFAULT_FACT_KEYS = (
-    "ansible_distribution", "ansible_distribution_version",
-    "ansible_kernel", "ansible_os_family", "ansible_architecture",
-    "ansible_processor_count", "ansible_memtotal_mb",
-    "ansible_default_ipv4", "ansible_hostname", "ansible_fqdn",
-    "ansible_service_mgr", "ansible_python_version",
+    "ansible_distribution",
+    "ansible_distribution_version",
+    "ansible_kernel",
+    "ansible_os_family",
+    "ansible_architecture",
+    "ansible_processor_count",
+    "ansible_memtotal_mb",
+    "ansible_default_ipv4",
+    "ansible_hostname",
+    "ansible_fqdn",
+    "ansible_service_mgr",
+    "ansible_python_version",
 )
 
 
@@ -67,8 +83,7 @@ def _redact(value: Any, depth: int = 0) -> Any:
         return "<...>"
     if isinstance(value, dict):
         return {
-            k: ("<redacted>" if _is_secret_key(str(k)) else _redact(v, depth + 1))
-            for k, v in value.items()
+            k: ("<redacted>" if _is_secret_key(str(k)) else _redact(v, depth + 1)) for k, v in value.items()
         }
     if isinstance(value, list):
         return [_redact(v, depth + 1) for v in value]

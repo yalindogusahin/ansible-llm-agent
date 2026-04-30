@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from ansible_collections.ysahin.ansible_ai.plugins.module_utils import rules as rmod
 
 
@@ -89,10 +88,12 @@ def test_is_path_allowed_glob_match():
 
 
 def test_is_path_allowed_deny_overrides():
-    rules = rmod.merge([
-        _layer(allow={"read_file": ["/etc/**"]}),
-        _layer(deny={"read_file": ["/etc/shadow"]}),
-    ])
+    rules = rmod.merge(
+        [
+            _layer(allow={"read_file": ["/etc/**"]}),
+            _layer(deny={"read_file": ["/etc/shadow"]}),
+        ]
+    )
     assert rmod.is_path_allowed(rules, "/etc/shadow", "read") is False
     assert rmod.is_path_allowed(rules, "/etc/hosts", "read") is True
 
@@ -105,10 +106,12 @@ def test_is_python_import_allowed_supports_dotted_prefix():
 
 
 def test_is_python_import_deny_blocks_subpackage():
-    rules = rmod.merge([
-        _layer(allow={"python": ["os"]}),
-        _layer(deny={"python": ["os.system"]}),
-    ])
+    rules = rmod.merge(
+        [
+            _layer(allow={"python": ["os"]}),
+            _layer(deny={"python": ["os.system"]}),
+        ]
+    )
     assert rmod.is_python_import_allowed(rules, "os.system") is False
     assert rmod.is_python_import_allowed(rules, "os.path") is True
 

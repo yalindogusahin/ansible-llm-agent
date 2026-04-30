@@ -7,12 +7,15 @@ description: LLM-driven cross-host investigation agent for Ansible. Provider-agn
 license:
   - MIT
 tags:
+  - tools
+  - linux
+  - infrastructure
   - ai
   - llm
   - debug
   - agent
   - investigation
-repository: https://github.com/<owner>/ansible_ai
+repository: https://github.com/yalindogusahin/ansible-llm-agent
 build_ignore:
   - .git
   - .venv

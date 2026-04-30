@@ -4,12 +4,12 @@ Rules express what an LLM-generated snippet may do on a target. Layered
 across collection defaults, group_vars, host_vars, play vars, and task args
 following ansible's normal precedence. Deny always wins on conflict.
 """
+
 from __future__ import annotations
 
 import copy
 import fnmatch
 from typing import Any
-
 
 PRIMITIVE_KEYS = ("run_cmd", "read_file", "write_file", "python")
 ALLOW_KEYS = PRIMITIVE_KEYS + ("network",)
@@ -69,7 +69,9 @@ def validate(rules: dict[str, Any]) -> None:
             if not entry.startswith("/") and not entry.startswith("**"):
                 raise RuleError(f"{path_key} entry must be absolute or **: {entry!r}")
 
-    if "max_iterations" in budget and not (isinstance(budget["max_iterations"], int) and budget["max_iterations"] > 0):
+    if "max_iterations" in budget and not (
+        isinstance(budget["max_iterations"], int) and budget["max_iterations"] > 0
+    ):
         raise RuleError("budget.max_iterations must be positive int")
     if "max_tokens" in budget and not (isinstance(budget["max_tokens"], int) and budget["max_tokens"] > 0):
         raise RuleError("budget.max_tokens must be positive int")
@@ -120,10 +122,7 @@ def is_path_allowed(rules: dict[str, Any], path: str, mode: str) -> bool:
     for pat in rules["deny"].get(key, []):
         if fnmatch.fnmatch(path, pat) or pat == "**":
             return False
-    for pat in rules["allow"].get(key, []):
-        if fnmatch.fnmatch(path, pat) or pat == "**":
-            return True
-    return False
+    return any(fnmatch.fnmatch(path, pat) or pat == "**" for pat in rules["allow"].get(key, []))
 
 
 def is_python_import_allowed(rules: dict[str, Any], module: str) -> bool:
@@ -133,6 +132,4 @@ def is_python_import_allowed(rules: dict[str, Any], module: str) -> bool:
         return False
     if module in rules["allow"]["python"]:
         return True
-    if any(module.startswith(a + ".") for a in rules["allow"]["python"]):
-        return True
-    return False
+    return any(module.startswith(a + ".") for a in rules["allow"]["python"])

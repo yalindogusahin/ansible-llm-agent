@@ -1,0 +1,22 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
+and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
+
+## [Unreleased]
+
+## [0.1.0] - 2026-04-30
+
+### Added
+
+- Initial release.
+- `ai_agent` action plugin: ReAct loop over LLM-generated Python on target hosts.
+- `ai_exec` module: AST-validated, sandboxed Python execution with bwrap/firejail/nsjail/rlimit fallback.
+- Layered allow/deny rule system (collection defaults < group_vars < host_vars < play < task), deny-wins.
+- Provider-agnostic LLM client: Claude (Anthropic), OpenAI, Bedrock, Ollama.
+- `endpoint` and `api_key` task args override env vars.
+- Conservative read-only default rules in `roles/ai_agent/defaults/main.yml`.
+- 54 unit tests covering rules merge, sandbox AST, prompt rendering, LLM client wiring.
+- Integration smoke playbook for 2-node kafka lab.

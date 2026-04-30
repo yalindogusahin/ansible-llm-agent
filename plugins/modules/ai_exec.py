@@ -1,6 +1,6 @@
 #!/usr/bin/python
-# -*- coding: utf-8 -*-
 """ansible_ai.ai_exec - sandboxed Python execution module."""
+
 from __future__ import annotations
 
 DOCUMENTATION = r"""

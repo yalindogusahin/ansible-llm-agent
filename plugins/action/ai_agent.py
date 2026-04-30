@@ -6,6 +6,7 @@ Per host:
   3. Loop: LLM -> action JSON -> validate AST -> ai_exec on target -> observation.
   4. Stop on action=done or budget exhaustion.
 """
+
 from __future__ import annotations
 
 import copy
@@ -14,7 +15,6 @@ from typing import Any
 from ansible.errors import AnsibleActionFail
 from ansible.plugins.action import ActionBase
 from ansible.utils.display import Display
-
 from ansible_collections.ysahin.ansible_ai.plugins.module_utils import (
     llm_client as llm_mod,
 )
@@ -28,32 +28,85 @@ from ansible_collections.ysahin.ansible_ai.plugins.module_utils import (
     sandbox as sandbox_mod,
 )
 
-
 display = Display()
 
 
 COLLECTION_DEFAULT_RULES: dict[str, Any] = {
     "allow": {
         "run_cmd": [
-            "ps", "cat", "ss", "journalctl", "df", "ls", "grep", "find",
-            "awk", "sed", "ip", "free", "uptime", "dmesg", "netstat", "lsof",
-            "uname", "id", "whoami", "hostname", "stat", "wc", "head", "tail",
-            "openssl", "curl", "dig", "nslookup", "tracepath", "ping",
+            "ps",
+            "cat",
+            "ss",
+            "journalctl",
+            "df",
+            "ls",
+            "grep",
+            "find",
+            "awk",
+            "sed",
+            "ip",
+            "free",
+            "uptime",
+            "dmesg",
+            "netstat",
+            "lsof",
+            "uname",
+            "id",
+            "whoami",
+            "hostname",
+            "stat",
+            "wc",
+            "head",
+            "tail",
+            "openssl",
+            "curl",
+            "dig",
+            "nslookup",
+            "tracepath",
+            "ping",
         ],
         "read_file": ["/var/log/**", "/proc/**", "/etc/**", "/sys/**", "/run/**"],
         "write_file": [],
         "python": [
-            "os", "os.path", "json", "re", "datetime", "collections",
-            "pathlib", "subprocess", "shutil", "shlex", "io", "sys",
-            "itertools", "functools", "typing",
+            "os",
+            "os.path",
+            "json",
+            "re",
+            "datetime",
+            "collections",
+            "pathlib",
+            "subprocess",
+            "shutil",
+            "shlex",
+            "io",
+            "sys",
+            "itertools",
+            "functools",
+            "typing",
         ],
         "network": False,
     },
     "deny": {
         "run_cmd": [
-            "rm", "dd", "mkfs", "mount", "umount", "systemctl", "kill",
-            "iptables", "shutdown", "reboot", "chmod", "chown", "useradd",
-            "userdel", "passwd", "su", "sudo", "service", "init",
+            "rm",
+            "dd",
+            "mkfs",
+            "mount",
+            "umount",
+            "systemctl",
+            "kill",
+            "iptables",
+            "shutdown",
+            "reboot",
+            "chmod",
+            "chown",
+            "useradd",
+            "userdel",
+            "passwd",
+            "su",
+            "sudo",
+            "service",
+            "init",
         ],
         "write_file": ["**"],
         "python": ["socket", "ctypes", "multiprocessing"],
@@ -65,10 +118,20 @@ COLLECTION_DEFAULT_RULES: dict[str, Any] = {
 
 class ActionModule(ActionBase):
     TRANSFERS_FILES = False
-    _VALID_ARGS = frozenset((
-        "prompt", "rules", "max_iterations", "max_tokens",
-        "provider", "model", "timeout", "aggregate",
-    ))
+    _VALID_ARGS = frozenset(
+        (
+            "prompt",
+            "rules",
+            "max_iterations",
+            "max_tokens",
+            "provider",
+            "model",
+            "timeout",
+            "aggregate",
+            "endpoint",
+            "api_key",
+        )
+    )
 
     def run(self, tmp=None, task_vars=None):
         task_vars = task_vars or {}
@@ -83,7 +146,7 @@ class ActionModule(ActionBase):
         try:
             rules = rules_mod.merge(layers)
         except rules_mod.RuleError as e:
-            raise AnsibleActionFail(f"ai_agent: invalid rules: {e}")
+            raise AnsibleActionFail(f"ai_agent: invalid rules: {e}") from e
 
         for k in ("max_iterations", "max_tokens"):
             if args.get(k) is not None:
@@ -91,12 +154,19 @@ class ActionModule(ActionBase):
 
         provider = args.get("provider")
         model = args.get("model")
+        endpoint = args.get("endpoint")
+        api_key = args.get("api_key")
         timeout = int(args.get("timeout", 30))
 
         try:
-            client = llm_mod.get_client(provider=provider, model=model)
+            client = llm_mod.get_client(
+                provider=provider,
+                model=model,
+                endpoint=endpoint,
+                api_key=api_key,
+            )
         except llm_mod.LLMError as e:
-            raise AnsibleActionFail(f"ai_agent: LLM client init failed: {e}")
+            raise AnsibleActionFail(f"ai_agent: LLM client init failed: {e}") from e
 
         host_ctx = self._build_host_ctx(task_vars)
         system = prompts_mod.build_system_prompt(prompt, rules, host_ctx)
@@ -132,19 +202,26 @@ class ActionModule(ActionBase):
             except ValueError as e:
                 transcript.append({"step": iterations, "error": f"parse: {e}", "raw": completion.text[:500]})
                 messages.append({"role": "assistant", "content": completion.text})
-                messages.append({"role": "user", "content": f"Your previous output was not valid JSON: {e}. Emit a single JSON object only."})
+                messages.append(
+                    {
+                        "role": "user",
+                        "content": f"Your previous output was not valid JSON: {e}. Emit a single JSON object only.",
+                    }
+                )
                 continue
 
             messages.append({"role": "assistant", "content": completion.text})
 
             if action["action"] == "done":
                 diagnosis = action.get("summary", "(no summary)")
-                transcript.append({
-                    "step": iterations,
-                    "action": "done",
-                    "summary": diagnosis,
-                    "reason": action.get("reason", ""),
-                })
+                transcript.append(
+                    {
+                        "step": iterations,
+                        "action": "done",
+                        "summary": diagnosis,
+                        "reason": action.get("reason", ""),
+                    }
+                )
                 break
 
             code = action["code"]
@@ -152,12 +229,14 @@ class ActionModule(ActionBase):
                 sandbox_mod.validate_ast(code, rules)
             except sandbox_mod.SandboxViolation as e:
                 obs = prompts_mod.render_observation("", "", 126, blocked=e.reason)
-                transcript.append({
-                    "step": iterations,
-                    "action": "run_python",
-                    "code": code,
-                    "blocked_by_rule": e.reason,
-                })
+                transcript.append(
+                    {
+                        "step": iterations,
+                        "action": "run_python",
+                        "code": code,
+                        "blocked_by_rule": e.reason,
+                    }
+                )
                 messages.append({"role": "user", "content": f"OBSERVATION:\n{obs}"})
                 continue
 
@@ -173,30 +252,34 @@ class ActionModule(ActionBase):
             exit_code = mr.get("exit", -1)
             blocked = mr.get("blocked_by_rule")
 
-            transcript.append({
-                "step": iterations,
-                "action": "run_python",
-                "code": code,
-                "reason": action.get("reason", ""),
-                "stdout": stdout,
-                "stderr": stderr,
-                "exit": exit_code,
-                "blocked_by_rule": blocked,
-            })
+            transcript.append(
+                {
+                    "step": iterations,
+                    "action": "run_python",
+                    "code": code,
+                    "reason": action.get("reason", ""),
+                    "stdout": stdout,
+                    "stderr": stderr,
+                    "exit": exit_code,
+                    "blocked_by_rule": blocked,
+                }
+            )
 
             obs = prompts_mod.render_observation(stdout, stderr, exit_code, blocked=blocked)
             messages.append({"role": "user", "content": f"OBSERVATION:\n{obs}"})
         else:
             diagnosis = "stopped: max_iterations reached without 'done'"
 
-        result.update({
-            "changed": False,
-            "transcript": transcript,
-            "diagnosis": diagnosis or "(no diagnosis)",
-            "iterations_used": iterations,
-            "tokens_used": {"input": total_input, "output": total_output},
-            "rules_effective": rules,
-        })
+        result.update(
+            {
+                "changed": False,
+                "transcript": transcript,
+                "diagnosis": diagnosis or "(no diagnosis)",
+                "iterations_used": iterations,
+                "tokens_used": {"input": total_input, "output": total_output},
+                "rules_effective": rules,
+            }
+        )
         return result
 
     def _collect_rule_layers(self, task_vars: dict[str, Any], args: dict[str, Any]) -> list[dict[str, Any]]:

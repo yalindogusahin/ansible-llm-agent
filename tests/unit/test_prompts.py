@@ -1,28 +1,31 @@
 from __future__ import annotations
 
 import pytest
-
 from ansible_collections.ysahin.ansible_ai.plugins.module_utils import prompts as pmod
 from ansible_collections.ysahin.ansible_ai.plugins.module_utils import rules as rmod
 
 
 def _rules():
-    return rmod.merge([{
-        "allow": {
-            "run_cmd": ["ps", "ss"],
-            "read_file": ["/var/log/**"],
-            "write_file": [],
-            "python": ["json", "subprocess"],
-            "network": False,
-        },
-        "deny": {
-            "run_cmd": ["rm"],
-            "read_file": [],
-            "write_file": ["**"],
-            "python": ["socket"],
-        },
-        "budget": {"max_iterations": 3, "max_tokens": 1000},
-    }])
+    return rmod.merge(
+        [
+            {
+                "allow": {
+                    "run_cmd": ["ps", "ss"],
+                    "read_file": ["/var/log/**"],
+                    "write_file": [],
+                    "python": ["json", "subprocess"],
+                    "network": False,
+                },
+                "deny": {
+                    "run_cmd": ["rm"],
+                    "read_file": [],
+                    "write_file": ["**"],
+                    "python": ["socket"],
+                },
+                "budget": {"max_iterations": 3, "max_tokens": 1000},
+            }
+        ]
+    )
 
 
 def _host_ctx():

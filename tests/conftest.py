@@ -4,12 +4,12 @@ Registers a synthetic ansible_collections.ysahin.ansible_ai.plugins.module_utils
 namespace package pointing at the in-repo source so tests can import the
 collection's modules without `ansible-galaxy collection install`.
 """
+
 from __future__ import annotations
 
 import pathlib
 import sys
 import types
-
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 MODULE_UTILS = ROOT / "plugins" / "module_utils"

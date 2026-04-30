@@ -62,7 +62,12 @@ Enforcement runs in three layers:
    `subprocess`/`os.system` calls whose argv\[0\] is not in the allow list
    or whose argv is not statically resolvable.
 3. Execution itself is wrapped in the strongest available isolation:
-   `bwrap` -> `firejail` -> `nsjail` -> in-process rlimit fallback.
+   `bwrap` -> `firejail` -> `nsjail` -> in-process rlimit fallback. Each tool
+   is probed at runtime: presence on PATH is not enough, so a bwrap blocked
+   by AppArmor (e.g. Ubuntu 24's `kernel.apparmor_restrict_unprivileged_userns=1`)
+   automatically falls through to the next tool. Run
+   `sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0` to enable
+   bwrap on those hosts.
 
 The model can never invoke a denied command, even if the prompt is
 adversarial — the AST layer rejects it at the boundary regardless of what
