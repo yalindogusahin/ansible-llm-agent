@@ -1,3 +1,6 @@
+default_language_version:
+  python: python3.12
+
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -28,6 +31,9 @@ repos:
     rev: v26.4.0
     hooks:
       - id: ansible-lint
+        # ansible-lint v26 pins python3.14 in its hook spec; override so CI
+        # runners (which have 3.12) can install the env.
+        language_version: python3.12
         files: \.(yaml|yml)$
         args: [--offline]
 
