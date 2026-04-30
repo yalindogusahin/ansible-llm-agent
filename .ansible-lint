@@ -9,3 +9,9 @@ exclude_paths:
   - .venv/
   - .pytest_cache/
   - tests/integration/inventory.ini
+  # ansible-lint runs in its own venv and cannot resolve the FQCN of the
+  # collection being linted (chicken-and-egg). The integration playbook uses
+  # yalindogusahin.ansible_ai.ai_agent which is the very collection ansible-lint
+  # is operating on. syntax-check is an unskippable rule, so we exclude the
+  # file instead. ansible-playbook --syntax-check still validates it during CI.
+  - tests/integration/playbook_debug.yml

@@ -41,7 +41,8 @@ repos:
     hooks:
       - id: pytest-unit
         name: pytest unit
-        entry: python3 -m pytest tests/unit/ -q
-        language: system
+        entry: pytest tests/unit/ -q
+        language: python
+        additional_dependencies: [pytest]
         pass_filenames: false
         stages: [pre-commit]
