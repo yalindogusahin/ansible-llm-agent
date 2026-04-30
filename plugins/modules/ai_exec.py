@@ -30,7 +30,7 @@ options:
 
 EXAMPLES = r"""
 - name: Inspect listening sockets
-  ysahin.ansible_ai.ai_exec:
+  yalindogusahin.ansible_ai.ai_exec:
     code: |
       import subprocess
       print(subprocess.run(["ss", "-tnlp"], capture_output=True, text=True).stdout)
@@ -68,8 +68,8 @@ timed_out:
 """
 
 from ansible.module_utils.basic import AnsibleModule
-from ansible_collections.ysahin.ansible_ai.plugins.module_utils import rules as rules_mod
-from ansible_collections.ysahin.ansible_ai.plugins.module_utils import sandbox as sandbox_mod
+from ansible_collections.yalindogusahin.ansible_ai.plugins.module_utils import rules as rules_mod
+from ansible_collections.yalindogusahin.ansible_ai.plugins.module_utils import sandbox as sandbox_mod
 
 
 def main() -> None:

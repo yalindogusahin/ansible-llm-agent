@@ -1,6 +1,6 @@
 """pytest bootstrap for ansible_ai unit tests.
 
-Registers a synthetic ansible_collections.ysahin.ansible_ai.plugins.module_utils
+Registers a synthetic ansible_collections.yalindogusahin.ansible_ai.plugins.module_utils
 namespace package pointing at the in-repo source so tests can import the
 collection's modules without `ansible-galaxy collection install`.
 """
@@ -24,7 +24,7 @@ def _register(fqn: str, path: pathlib.Path | None) -> None:
 
 
 _register("ansible_collections", None)
-_register("ansible_collections.ysahin", None)
-_register("ansible_collections.ysahin.ansible_ai", None)
-_register("ansible_collections.ysahin.ansible_ai.plugins", None)
-_register("ansible_collections.ysahin.ansible_ai.plugins.module_utils", MODULE_UTILS)
+_register("ansible_collections.yalindogusahin", None)
+_register("ansible_collections.yalindogusahin.ansible_ai", None)
+_register("ansible_collections.yalindogusahin.ansible_ai.plugins", None)
+_register("ansible_collections.yalindogusahin.ansible_ai.plugins.module_utils", MODULE_UTILS)

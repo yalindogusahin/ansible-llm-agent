@@ -19,7 +19,7 @@ some subset of hosts and we do not know which probes to run." This
 collection lets you say:
 
 ```yaml
-- ysahin.ansible_ai.ai_agent:
+- yalindogusahin.ansible_ai.ai_agent:
     prompt: "connect cannot reach broker. find why."
 ```
 
@@ -113,16 +113,16 @@ ansible_ai/
 
 ```bash
 ansible-galaxy collection build .
-ansible-galaxy collection install ysahin-ansible_ai-*.tar.gz
+ansible-galaxy collection install yalindogusahin-ansible_ai-*.tar.gz
 ```
 
 ## Quick start
 
 ```yaml
 - hosts: kafka
-  roles: [ysahin.ansible_ai.ai_agent]
+  roles: [yalindogusahin.ansible_ai.ai_agent]
   tasks:
-    - ysahin.ansible_ai.ai_agent:
+    - yalindogusahin.ansible_ai.ai_agent:
         prompt: "what is wrong with this node, focus on networking and disk"
         max_iterations: 5
       register: r

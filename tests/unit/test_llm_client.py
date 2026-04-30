@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import pytest
-from ansible_collections.ysahin.ansible_ai.plugins.module_utils import llm_client as lmod
+from ansible_collections.yalindogusahin.ansible_ai.plugins.module_utils import llm_client as lmod
 
 
 def test_get_client_unknown_provider_raises():

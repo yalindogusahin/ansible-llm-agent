@@ -6,7 +6,7 @@
     - ai_agent
   tasks:
     - name: Investigate connect-to-broker reachability
-      ysahin.ansible_ai.ai_agent:
+      yalindogusahin.ansible_ai.ai_agent:
         prompt: >-
           Connect cannot reach broker. Inspect listening ports, hostname
           resolution, and the kafka log on each node. Identify the most
@@ -28,7 +28,7 @@
   gather_facts: false
   tasks:
     - name: Force cat into deny list and confirm sandbox blocks it
-      ysahin.ansible_ai.ai_agent:
+      yalindogusahin.ansible_ai.ai_agent:
         prompt: "Read /etc/hostname and stop."
         max_iterations: 2
         rules:
@@ -47,7 +47,7 @@
   gather_facts: false
   tasks:
     - name: Force a single iteration and verify diagnosis indicates stop
-      ysahin.ansible_ai.ai_agent:
+      yalindogusahin.ansible_ai.ai_agent:
         prompt: "Find the root cause of any kafka connectivity issue you can spot."
         max_iterations: 1
       register: budget_result

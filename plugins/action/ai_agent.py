@@ -15,16 +15,16 @@ from typing import Any
 from ansible.errors import AnsibleActionFail
 from ansible.plugins.action import ActionBase
 from ansible.utils.display import Display
-from ansible_collections.ysahin.ansible_ai.plugins.module_utils import (
+from ansible_collections.yalindogusahin.ansible_ai.plugins.module_utils import (
     llm_client as llm_mod,
 )
-from ansible_collections.ysahin.ansible_ai.plugins.module_utils import (
+from ansible_collections.yalindogusahin.ansible_ai.plugins.module_utils import (
     prompts as prompts_mod,
 )
-from ansible_collections.ysahin.ansible_ai.plugins.module_utils import (
+from ansible_collections.yalindogusahin.ansible_ai.plugins.module_utils import (
     rules as rules_mod,
 )
-from ansible_collections.ysahin.ansible_ai.plugins.module_utils import (
+from ansible_collections.yalindogusahin.ansible_ai.plugins.module_utils import (
     sandbox as sandbox_mod,
 )
 
@@ -242,7 +242,7 @@ class ActionModule(ActionBase):
 
             module_args = {"code": code, "rules": rules, "timeout": timeout}
             mr = self._execute_module(
-                module_name="ysahin.ansible_ai.ai_exec",
+                module_name="yalindogusahin.ansible_ai.ai_exec",
                 module_args=module_args,
                 task_vars=task_vars,
             )
