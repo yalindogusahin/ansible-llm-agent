@@ -1,8 +1,9 @@
 namespace: yalindogusahin
 name: ansible_ai
-version: 0.1.0
+version: 0.1.1
 readme: README.md
-authors: []
+authors:
+  - yalindogusahin
 description: LLM-driven cross-host investigation agent for Ansible. Provider-agnostic.
 license:
   - MIT
