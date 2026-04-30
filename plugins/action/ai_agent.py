@@ -130,6 +130,7 @@ class ActionModule(ActionBase):
             "aggregate",
             "endpoint",
             "api_key",
+            "print_result",
         )
     )
 
@@ -280,6 +281,11 @@ class ActionModule(ActionBase):
                 "rules_effective": rules,
             }
         )
+
+        if args.get("print_result"):
+            host = task_vars.get("inventory_hostname", "?")
+            display.display(f"[ai_agent:{host}] {result['diagnosis']}")
+
         return result
 
     def _collect_rule_layers(self, task_vars: dict[str, Any], args: dict[str, Any]) -> list[dict[str, Any]]:

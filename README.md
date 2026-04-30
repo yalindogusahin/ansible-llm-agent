@@ -125,9 +125,12 @@ ansible-galaxy collection install yalindogusahin-ansible_ai-*.tar.gz
     - yalindogusahin.ansible_ai.ai_agent:
         prompt: "what is wrong with this node, focus on networking and disk"
         max_iterations: 5
-      register: r
-    - debug: msg="{{ inventory_hostname }}: {{ r.diagnosis }}"
+        print_result: true
 ```
+
+`print_result: true` writes the diagnosis directly to ansible output. Drop
+it (or set false) and `register: r` + `r.diagnosis` if you want the result
+in a variable instead.
 
 ## Returned shape
 

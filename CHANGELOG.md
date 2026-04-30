@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.2] - 2026-04-30
+
+### Added
+
+- `print_result: true` task arg on `ai_agent` — prints the diagnosis directly to ansible output, no `register` + `debug` boilerplate needed.
+
 ## [0.1.1] - 2026-04-30
 
 ### Fixed
