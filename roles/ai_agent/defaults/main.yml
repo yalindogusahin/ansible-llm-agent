@@ -1,0 +1,90 @@
+---
+# Conservative read-only defaults. Override per group_vars / host_vars / play / task.
+# Deny entries always win over allow entries from any layer.
+ansible_ai_rules:
+  allow:
+    run_cmd:
+      - ps
+      - cat
+      - ss
+      - journalctl
+      - df
+      - ls
+      - grep
+      - find
+      - awk
+      - sed
+      - ip
+      - free
+      - uptime
+      - dmesg
+      - netstat
+      - lsof
+      - uname
+      - id
+      - whoami
+      - hostname
+      - stat
+      - wc
+      - head
+      - tail
+      - openssl
+      - dig
+      - nslookup
+      - tracepath
+      - ping
+    read_file:
+      - /var/log/**
+      - /proc/**
+      - /etc/**
+      - /sys/**
+      - /run/**
+    write_file: []
+    python:
+      - os
+      - os.path
+      - json
+      - re
+      - datetime
+      - collections
+      - pathlib
+      - subprocess
+      - shutil
+      - shlex
+      - io
+      - sys
+      - itertools
+      - functools
+      - typing
+    network: false
+  deny:
+    run_cmd:
+      - rm
+      - dd
+      - mkfs
+      - mount
+      - umount
+      - systemctl
+      - kill
+      - iptables
+      - shutdown
+      - reboot
+      - chmod
+      - chown
+      - useradd
+      - userdel
+      - passwd
+      - su
+      - sudo
+      - service
+      - init
+    write_file:
+      - "**"
+    python:
+      - socket
+      - ctypes
+      - multiprocessing
+    read_file: []
+  budget:
+    max_iterations: 5
+    max_tokens: 8000

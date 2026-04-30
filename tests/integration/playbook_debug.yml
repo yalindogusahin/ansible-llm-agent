@@ -1,0 +1,58 @@
+---
+- name: ai_agent end-to-end smoke
+  hosts: kafka
+  gather_facts: true
+  roles:
+    - ai_agent
+  tasks:
+    - name: Investigate connect-to-broker reachability
+      ysahin.ansible_ai.ai_agent:
+        prompt: >-
+          Connect cannot reach broker. Inspect listening ports, hostname
+          resolution, and the kafka log on each node. Identify the most
+          likely cause and stop.
+        max_iterations: 5
+        max_tokens: 6000
+      register: agent_result
+
+    - name: Show diagnosis
+      debug:
+        msg: "{{ inventory_hostname }} -> {{ agent_result.diagnosis }}"
+
+    - name: Show transcript step count
+      debug:
+        msg: "{{ inventory_hostname }} steps={{ agent_result.iterations_used }} tokens={{ agent_result.tokens_used }}"
+
+- name: Negative path - rule blocks cat
+  hosts: kafka_broker
+  gather_facts: false
+  tasks:
+    - name: Force cat into deny list and confirm sandbox blocks it
+      ysahin.ansible_ai.ai_agent:
+        prompt: "Read /etc/hostname and stop."
+        max_iterations: 2
+        rules:
+          deny:
+            run_cmd: [cat]
+      register: blocked_result
+
+    - name: Assert at least one step was blocked by rule
+      assert:
+        that:
+          - blocked_result.transcript | selectattr('blocked_by_rule', 'defined') | list | length > 0
+        fail_msg: "expected at least one transcript entry to carry blocked_by_rule"
+
+- name: Budget exhaustion path
+  hosts: kafka_connect
+  gather_facts: false
+  tasks:
+    - name: Force a single iteration and verify diagnosis indicates stop
+      ysahin.ansible_ai.ai_agent:
+        prompt: "Find the root cause of any kafka connectivity issue you can spot."
+        max_iterations: 1
+      register: budget_result
+
+    - name: Assert at most one iteration ran
+      assert:
+        that:
+          - budget_result.iterations_used <= 1

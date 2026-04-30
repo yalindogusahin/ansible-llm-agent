@@ -1,0 +1,21 @@
+namespace: ysahin
+name: ansible_ai
+version: 0.1.0
+readme: README.md
+authors: []
+description: LLM-driven cross-host investigation agent for Ansible. Provider-agnostic.
+license:
+  - MIT
+tags:
+  - ai
+  - llm
+  - debug
+  - agent
+  - investigation
+repository: https://github.com/<owner>/ansible_ai
+build_ignore:
+  - .git
+  - .venv
+  - __pycache__
+  - "*.pyc"
+  - tests/integration/.cache

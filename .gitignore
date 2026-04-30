@@ -1,0 +1,10 @@
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+.venv/
+.env
+*.tar.gz
+.DS_Store
+.coverage
+htmlcov/
