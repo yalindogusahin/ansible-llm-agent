@@ -156,6 +156,56 @@ def render_observation(stdout: str, stderr: str, exit_code: int, blocked: str | 
     return body
 
 
+AGGREGATE_PROMPT_TEMPLATE = """You are aggregating per-host investigation results from an Ansible play.
+
+GOAL: {prompt}
+
+PER-HOST DIAGNOSES:
+{per_host_block}
+
+Synthesize across hosts. Identify common patterns, divergences, and the most
+likely cluster-level root cause. Mention which hosts share which symptoms.
+
+Emit ONE JSON object on a single line, nothing else:
+  {{"action": "done", "summary": "<cluster-level summary>", "reason": "<why>"}}
+
+Output only the JSON object on a single line. No markdown fences. No commentary."""
+
+
+def _format_per_host_block(results: Any) -> str:
+    if isinstance(results, dict):
+        items: list[tuple[str, Any]] = list(results.items())
+    elif isinstance(results, list):
+        items = [(f"host_{i}", r) for i, r in enumerate(results)]
+    else:
+        return "(no per-host results provided)"
+
+    blocks: list[str] = []
+    for host, r in items:
+        if not isinstance(r, dict):
+            continue
+        diag = r.get("diagnosis", "(no diagnosis)")
+        iters = r.get("iterations_used", "?")
+        tokens = r.get("tokens_used", {})
+        if isinstance(diag, str) and len(diag) > 2000:
+            diag = diag[:2000] + "..."
+        header = f"--- {host} (iterations={iters}, tokens={tokens}) ---"
+        blocks.append(f"{header}\n{diag}")
+    return "\n\n".join(blocks) if blocks else "(no per-host results provided)"
+
+
+def build_aggregate_prompt(prompt: str, results: Any) -> str:
+    """Render the cluster-level aggregation system prompt.
+
+    `results` may be a dict mapping hostname -> per-host result, or a list
+    of per-host result dicts (host names will be synthesized).
+    """
+    return AGGREGATE_PROMPT_TEMPLATE.format(
+        prompt=prompt.strip(),
+        per_host_block=_format_per_host_block(results),
+    )
+
+
 _FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
 
 

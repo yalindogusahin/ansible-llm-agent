@@ -152,3 +152,60 @@ def test_parse_action_rejects_missing_code_for_run_python():
 def test_parse_action_rejects_garbage():
     with pytest.raises(ValueError):
         pmod.parse_action("not json at all")
+
+
+def test_build_aggregate_prompt_with_dict_results():
+    results = {
+        "kafka-broker-1": {
+            "diagnosis": "broker port 9092 not listening",
+            "iterations_used": 3,
+            "tokens_used": {"input": 1000, "output": 200},
+        },
+        "kafka-broker-2": {
+            "diagnosis": "broker up but connect cannot resolve dns",
+            "iterations_used": 4,
+            "tokens_used": {"input": 1100, "output": 250},
+        },
+    }
+    out = pmod.build_aggregate_prompt("Cluster summary?", results)
+    assert "Cluster summary?" in out
+    assert "kafka-broker-1" in out and "kafka-broker-2" in out
+    assert "broker port 9092 not listening" in out
+    assert "broker up but connect cannot resolve dns" in out
+    assert "iterations=3" in out and "iterations=4" in out
+    assert "action" in out and "done" in out
+
+
+def test_build_aggregate_prompt_with_list_synthesizes_host_names():
+    results = [
+        {"diagnosis": "node A", "iterations_used": 1},
+        {"diagnosis": "node B", "iterations_used": 2},
+    ]
+    out = pmod.build_aggregate_prompt("summarize", results)
+    assert "host_0" in out and "host_1" in out
+    assert "node A" in out and "node B" in out
+
+
+def test_build_aggregate_prompt_handles_empty_results():
+    out = pmod.build_aggregate_prompt("p", [])
+    assert "(no per-host results provided)" in out
+
+
+def test_build_aggregate_prompt_handles_non_dict_results():
+    out = pmod.build_aggregate_prompt("p", "garbage-string-not-supported")
+    assert "(no per-host results provided)" in out
+
+
+def test_build_aggregate_prompt_truncates_huge_diagnosis():
+    huge = "x" * 5000
+    results = {"h": {"diagnosis": huge, "iterations_used": 1}}
+    out = pmod.build_aggregate_prompt("p", results)
+    assert "..." in out
+    assert "x" * 5000 not in out
+
+
+def test_build_aggregate_prompt_skips_non_dict_entries():
+    results = {"good": {"diagnosis": "ok"}, "bad": "not-a-dict"}
+    out = pmod.build_aggregate_prompt("p", results)
+    assert "good" in out and "ok" in out
+    assert "not-a-dict" not in out

@@ -128,6 +128,7 @@ class ActionModule(ActionBase):
             "model",
             "timeout",
             "aggregate",
+            "results",
             "endpoint",
             "api_key",
             "print_result",
@@ -142,6 +143,9 @@ class ActionModule(ActionBase):
         prompt = args.get("prompt")
         if not prompt:
             raise AnsibleActionFail("ai_agent: 'prompt' is required")
+
+        if args.get("aggregate"):
+            return self._run_aggregate(args, task_vars, result, prompt)
 
         layers = self._collect_rule_layers(task_vars, args)
         try:
@@ -296,6 +300,77 @@ class ActionModule(ActionBase):
         if isinstance(args.get("rules"), dict):
             layers.append(args["rules"])
         return layers
+
+    def _run_aggregate(
+        self,
+        args: dict[str, Any],
+        task_vars: dict[str, Any],
+        result: dict[str, Any],
+        prompt: str,
+    ) -> dict[str, Any]:
+        """Cluster-level summary mode.
+
+        One LLM call. No rules merge, no AST, no sandbox — this path emits
+        no code on any target host. Intended to be invoked once per play with
+        run_once + delegate_to: localhost, after a per-host ai_agent task has
+        registered its results in hostvars.
+        """
+        results_arg = args.get("results")
+        if results_arg is None:
+            raise AnsibleActionFail("ai_agent: 'results' is required when aggregate=true")
+        if not isinstance(results_arg, dict | list):
+            raise AnsibleActionFail("ai_agent: 'results' must be a dict or list")
+
+        provider = args.get("provider")
+        model = args.get("model")
+        endpoint = args.get("endpoint")
+        api_key = args.get("api_key")
+        max_tokens = int(args.get("max_tokens", 4096))
+
+        try:
+            client = llm_mod.get_client(
+                provider=provider,
+                model=model,
+                endpoint=endpoint,
+                api_key=api_key,
+            )
+        except llm_mod.LLMError as e:
+            raise AnsibleActionFail(f"ai_agent: LLM client init failed: {e}") from e
+
+        system = prompts_mod.build_aggregate_prompt(prompt, results_arg)
+        messages = [{"role": "user", "content": "Emit your cluster-level summary now."}]
+
+        try:
+            completion = client.complete(system, messages, max_tokens=max_tokens)
+        except llm_mod.LLMError as e:
+            raise AnsibleActionFail(f"ai_agent aggregate: LLM error: {e}") from e
+
+        try:
+            action = prompts_mod.parse_action(completion.text)
+        except ValueError as e:
+            raise AnsibleActionFail(
+                f"ai_agent aggregate: malformed JSON from model: {e}; raw={completion.text[:500]!r}"
+            ) from e
+
+        if action.get("action") != "done":
+            raise AnsibleActionFail(
+                f"ai_agent aggregate: expected action='done', got {action.get('action')!r}"
+            )
+
+        summary = action.get("summary", "(no summary)")
+        result.update(
+            {
+                "changed": False,
+                "diagnosis": summary,
+                "tokens_used": {"input": completion.input_tokens, "output": completion.output_tokens},
+                "aggregate": True,
+                "host_count": (len(results_arg) if isinstance(results_arg, dict | list) else 0),
+            }
+        )
+        if args.get("print_result"):
+            host = task_vars.get("inventory_hostname", "?")
+            display.display(f"[ai_agent:aggregate@{host}] {summary}")
+        return result
 
     def _build_host_ctx(self, task_vars: dict[str, Any]) -> dict[str, Any]:
         hostname = task_vars.get("inventory_hostname", "<unknown>")
