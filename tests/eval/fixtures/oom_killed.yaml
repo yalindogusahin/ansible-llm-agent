@@ -1,0 +1,63 @@
+name: oom_killed
+prompt: "A worker process keeps disappearing without log entries from the app itself. Investigate."
+
+rules:
+  allow:
+    run_cmd: [dmesg, ps, free, journalctl]
+    read_file: ["/var/log/**", "/proc/**"]
+    write_file: []
+    python: []
+    network: false
+  deny:
+    run_cmd: [rm, kill]
+    read_file: []
+    write_file: ["**"]
+    python: [socket]
+  budget:
+    max_iterations: 4
+    max_tokens: 8000
+
+host_ctx:
+  hostname: worker-7
+  groups: [workers, all]
+  role: worker
+  facts:
+    ansible_distribution: Ubuntu
+    ansible_memtotal_mb: 4096
+
+turns:
+  - tool_call:
+      name: run_cmd
+      input:
+        argv: [dmesg, -T]
+        reason: "When a process disappears silently the kernel's ring buffer is the first place to look for OOM."
+    target:
+      stdout: |
+        [Mon Mar  4 09:01:12 2024] Out of memory: Killed process 9421 (worker.py) total-vm:5120000kB, anon-rss:3950000kB
+        [Mon Mar  4 09:01:12 2024] oom_reaper: reaped process 9421 (worker.py), now anon-rss:0kB
+      stderr: ""
+      exit: 0
+
+  - tool_call:
+      name: run_cmd
+      input:
+        argv: [free, -h]
+        reason: "Confirm with current memory pressure / total RAM."
+    target:
+      stdout: |
+        total used free shared buff/cache available
+        Mem:  3.9Gi 3.6Gi 100Mi 12Mi 250Mi 180Mi
+        Swap: 0B 0B 0B
+      stderr: ""
+      exit: 0
+
+  - tool_call:
+      name: done
+      input:
+        summary: "Worker process 9421 was killed by the kernel OOM killer. Host has only 3.9GiB RAM, no swap, and the worker grew to ~3.95GiB anon-rss. The disappearance is not an application crash; it is OOM. Either lower the worker's memory ceiling or move it to a larger node."
+        reason: "dmesg explicitly logs an OOM kill of the named process; free -h shows nearly exhausted memory and zero swap, consistent with the symptom."
+
+expect:
+  diagnosis_contains: ["oom", "9421", "swap"]
+  max_iterations: 4
+  must_converge: true

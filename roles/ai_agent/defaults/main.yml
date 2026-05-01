@@ -40,22 +40,9 @@ ansible_ai_rules:
       - /sys/**
       - /run/**
     write_file: []
-    python:
-      - os
-      - os.path
-      - json
-      - re
-      - datetime
-      - collections
-      - pathlib
-      - subprocess
-      - shutil
-      - shlex
-      - io
-      - sys
-      - itertools
-      - functools
-      - typing
+    # Shell-first: run_python tool is opt-in. Populate this list in
+    # group_vars / host_vars / play / task vars to enable it.
+    python: []
     network: false
   deny:
     run_cmd:

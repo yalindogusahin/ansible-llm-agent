@@ -1,0 +1,75 @@
+name: disk_full
+prompt: "Application reports write failures. Investigate disk usage and identify the culprit."
+
+rules:
+  allow:
+    run_cmd: [df, du, ls, find]
+    read_file: ["/var/log/**"]
+    write_file: []
+    python: []
+    network: false
+  deny:
+    run_cmd: [rm]
+    read_file: []
+    write_file: ["**"]
+    python: [socket]
+  budget:
+    max_iterations: 5
+    max_tokens: 8000
+
+host_ctx:
+  hostname: app-server-3
+  groups: [app, all]
+  role: app
+  facts:
+    ansible_distribution: Debian
+    ansible_kernel: 6.1.0-test
+
+turns:
+  - tool_call:
+      name: run_cmd
+      input:
+        argv: [df, -h]
+        reason: "Get filesystem-level utilization first."
+    target:
+      stdout: |
+        Filesystem      Size  Used Avail Use% Mounted on
+        /dev/sda1        50G   49G   12M 100% /
+        tmpfs           7.8G     0  7.8G   0% /dev/shm
+      stderr: ""
+      exit: 0
+
+  - tool_call:
+      name: run_cmd
+      input:
+        argv: [du, -sh, /var/log]
+        reason: "Root partition at 100%. Find the largest directory under /var/log."
+    target:
+      stdout: |
+        42G	/var/log
+      stderr: ""
+      exit: 0
+
+  - tool_call:
+      name: run_cmd
+      input:
+        argv: [ls, -laSh, /var/log]
+        reason: "/var/log accounts for almost all of /. Drill into top files."
+    target:
+      stdout: |
+        total 42G
+        -rw-r----- 1 root adm  41G Mar  4 09:12 nginx-access.log
+        -rw-r----- 1 root adm 800M Mar  4 09:12 syslog
+      stderr: ""
+      exit: 0
+
+  - tool_call:
+      name: done
+      input:
+        summary: "Root filesystem on /dev/sda1 is at 100% (49G used, 12M free). The cause is /var/log/nginx-access.log at 41G; logrotate is not rotating this file. Application write failures will resolve once this log is truncated or rotated."
+        reason: "df shows the saturation, du isolates /var/log, ls names the offending file. Three independent layers of evidence agree."
+
+expect:
+  diagnosis_contains: ["nginx-access", "100%", "/var/log"]
+  max_iterations: 5
+  must_converge: true

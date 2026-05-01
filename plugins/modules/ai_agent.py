@@ -13,19 +13,20 @@ DOCUMENTATION = r"""
 module: ai_agent
 short_description: LLM-driven ReAct investigation agent for Ansible
 description:
-  - Takes a natural-language prompt and runs an iterative LLM-driven loop
-    against a target host. Each iteration the LLM generates a small Python
-    snippet, the snippet runs sandboxed on the target via the ai_exec
-    module, and the output feeds back into the next iteration. The loop
-    stops when the LLM emits action=done or when iteration/token budget is
-    exhausted.
-  - Generated code is gated by an allow/deny rule set, layered through
-    ansible's variable precedence (collection defaults less than group_vars
-    less than host_vars less than play vars less than task args). Deny
-    entries always win on conflict.
+  - Takes a natural-language prompt and runs a tool-use loop against a target
+    host. Each iteration the LLM picks one tool call (run_cmd, read_file,
+    write_file, or run_python), the call runs sandboxed on the target via
+    the ai_exec module, and the structured result feeds back into the next
+    iteration. The loop stops when the LLM calls the `done` tool or when
+    iteration/token budget is exhausted.
+  - Tool calls are gated by an allow/deny rule set, layered through ansible's
+    variable precedence (collection defaults < group_vars < host_vars <
+    play vars < task args). Deny entries always win on conflict. run_python
+    is opt-in - it is offered to the model only when allow.python is non-empty.
   - Provider-agnostic. Supports Anthropic Claude, OpenAI Chat Completions,
     AWS Bedrock, and Ollama (and any OpenAI-compatible endpoint via
-    `provider=openai` plus `endpoint`).
+    `provider=openai` plus `endpoint`). Each provider is driven through its
+    native tool-use API; no JSON-action parsing.
 options:
   prompt:
     description: Natural-language instruction telling the agent what to investigate or do.
@@ -73,6 +74,15 @@ options:
     default: 30
   print_result:
     description: When true, write the final diagnosis line to the ansible runner's display so you don't need a separate `register` + `debug` task.
+    type: bool
+    required: false
+    default: false
+  stream:
+    description:
+      - When true, emit one compact line per orchestrator step to the ansible
+        runner's display (tool name + key params + exit code). Useful on long
+        investigations where the operator wants to see live progress instead
+        of waiting for the final diagnosis. Also enabled by env ANSIBLE_AI_STREAM=1.
     type: bool
     required: false
     default: false
@@ -195,7 +205,7 @@ rules_effective:
   returned: always
   type: dict
 transcript:
-  description: Per-iteration log. Each entry has step, action, code (if run_python), reason, stdout, stderr, exit, blocked_by_rule. Not present in aggregate mode.
+  description: Per-iteration log. Each entry has step, action (tool name or "done"), input (the tool's input dict), reason, stdout, stderr, exit, blocked_by_rule. Not present in aggregate mode.
   returned: when not aggregate
   type: list
   elements: dict

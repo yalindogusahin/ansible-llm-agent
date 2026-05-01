@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import pytest
 from ansible_collections.yalindogusahin.ansible_ai.plugins.module_utils import prompts as pmod
 from ansible_collections.yalindogusahin.ansible_ai.plugins.module_utils import rules as rmod
 
@@ -41,19 +40,6 @@ def _host_ctx():
     }
 
 
-def test_build_system_prompt_includes_allow_lists():
-    out = pmod.build_system_prompt("find broken connect", _rules(), _host_ctx())
-    assert "ps" in out and "ss" in out
-    assert "json" in out and "subprocess" in out
-    assert "/var/log/**" in out
-
-
-def test_build_system_prompt_includes_deny_lists():
-    out = pmod.build_system_prompt("find broken connect", _rules(), _host_ctx())
-    assert "rm" in out
-    assert "socket" in out
-
-
 def test_build_system_prompt_renders_host_context():
     out = pmod.build_system_prompt("find broken connect", _rules(), _host_ctx())
     assert "kafka-broker-1" in out
@@ -61,9 +47,23 @@ def test_build_system_prompt_renders_host_context():
     assert "Ubuntu" in out
 
 
-def test_build_system_prompt_renders_network_flag():
+def test_build_system_prompt_includes_deny_lists():
+    # Deny stays in the prose (the model must know what's denied even though
+    # tool descriptions only enumerate allows).
     out = pmod.build_system_prompt("p", _rules(), _host_ctx())
-    assert "network egress: no" in out
+    assert "rm" in out
+    assert "socket" in out
+    assert "**" in out
+
+
+def test_build_system_prompt_renders_network_state():
+    out = pmod.build_system_prompt("p", _rules(), _host_ctx())
+    assert "network egress: blocked" in out
+
+
+def test_build_system_prompt_includes_goal():
+    out = pmod.build_system_prompt("find why X", _rules(), _host_ctx())
+    assert "find why X" in out
 
 
 def test_filter_hostvars_redacts_secrets():
@@ -101,57 +101,16 @@ def test_filter_facts_keeps_default_keys():
     assert "irrelevant" not in filtered
 
 
-def test_render_observation_includes_exit_and_streams():
-    out = pmod.render_observation("hello\n", "warn\n", 0)
+def test_render_tool_result_includes_exit_and_streams():
+    out = pmod.render_tool_result("hello\n", "warn\n", 0)
     assert "exit=0" in out
     assert "STDOUT" in out and "hello" in out
     assert "STDERR" in out and "warn" in out
 
 
-def test_render_observation_includes_blocked_reason():
-    out = pmod.render_observation("", "", 126, blocked="rm denied")
+def test_render_tool_result_includes_blocked_reason():
+    out = pmod.render_tool_result("", "", 126, blocked="rm denied")
     assert "blocked_by_rule=rm denied" in out
-
-
-def test_parse_action_run_python_ok():
-    text = '{"action": "run_python", "code": "print(1)", "reason": "test"}'
-    action = pmod.parse_action(text)
-    assert action["action"] == "run_python"
-    assert action["code"] == "print(1)"
-
-
-def test_parse_action_done_ok():
-    text = '{"action": "done", "summary": "found it", "reason": "x"}'
-    action = pmod.parse_action(text)
-    assert action["action"] == "done"
-    assert action["summary"] == "found it"
-
-
-def test_parse_action_strips_markdown_fence():
-    text = '```json\n{"action": "done", "summary": "ok"}\n```'
-    action = pmod.parse_action(text)
-    assert action["action"] == "done"
-
-
-def test_parse_action_extracts_from_chatty_output():
-    text = 'Sure, here is the action:\n{"action": "done", "summary": "ok"}\nLet me know!'
-    action = pmod.parse_action(text)
-    assert action["action"] == "done"
-
-
-def test_parse_action_rejects_unknown_action():
-    with pytest.raises(ValueError):
-        pmod.parse_action('{"action": "go", "code": "x"}')
-
-
-def test_parse_action_rejects_missing_code_for_run_python():
-    with pytest.raises(ValueError):
-        pmod.parse_action('{"action": "run_python", "reason": "x"}')
-
-
-def test_parse_action_rejects_garbage():
-    with pytest.raises(ValueError):
-        pmod.parse_action("not json at all")
 
 
 def test_build_aggregate_prompt_with_dict_results():
@@ -173,7 +132,7 @@ def test_build_aggregate_prompt_with_dict_results():
     assert "broker port 9092 not listening" in out
     assert "broker up but connect cannot resolve dns" in out
     assert "iterations=3" in out and "iterations=4" in out
-    assert "action" in out and "done" in out
+    assert "done" in out
 
 
 def test_build_aggregate_prompt_with_list_synthesizes_host_names():

@@ -1,0 +1,76 @@
+name: broker_down
+prompt: "Connect cannot reach the kafka broker on this node. Find why."
+
+rules:
+  allow:
+    run_cmd: [ss, journalctl, ps]
+    read_file: ["/var/log/**"]
+    write_file: []
+    python: []
+    network: false
+  deny:
+    run_cmd: [rm, systemctl]
+    read_file: []
+    write_file: ["**"]
+    python: [socket]
+  budget:
+    max_iterations: 5
+    max_tokens: 8000
+
+host_ctx:
+  hostname: kafka-broker-1
+  groups: [kafka_broker, all]
+  role: kafka_broker
+  facts:
+    ansible_distribution: Ubuntu
+    ansible_kernel: 6.5.0-test
+
+turns:
+  - tool_call:
+      name: run_cmd
+      input:
+        argv: [ss, -tlnp]
+        reason: "Check whether anything is listening on broker port 9092."
+    target:
+      stdout: |
+        State    Recv-Q   Send-Q  Local Address:Port
+        LISTEN   0        128     127.0.0.53:53
+        LISTEN   0        128     0.0.0.0:22
+      stderr: ""
+      exit: 0
+
+  - tool_call:
+      name: run_cmd
+      input:
+        argv: [journalctl, -u, kafka, -n, "30", --no-pager]
+        reason: "9092 not listening; inspect kafka unit logs for last failure."
+    target:
+      stdout: |
+        kafka.service: Failed at step EXEC spawning /usr/bin/kafka-server-start.sh
+        kafka.service: BindException: Address already in use (port 9092)
+        kafka.service: Failed with result 'exit-code'
+      stderr: ""
+      exit: 0
+
+  - tool_call:
+      name: run_cmd
+      input:
+        argv: [ss, -tlnp, sport, "=", ":9092"]
+        reason: "Find which other process holds port 9092."
+    target:
+      stdout: |
+        State    Recv-Q  Send-Q  Local Address:Port  Process
+        LISTEN   0       128     0.0.0.0:9092        users:(("zombie-broker",pid=2310,fd=11))
+      stderr: ""
+      exit: 0
+
+  - tool_call:
+      name: done
+      input:
+        summary: "Kafka broker fails to start because port 9092 is already bound by a stale process 'zombie-broker' (pid 2310). The systemd unit logs a BindException, ss confirms the conflicting listener."
+        reason: "Three consistent signals: no listener for kafka, journal shows bind exception, ss locates the squatter."
+
+expect:
+  diagnosis_contains: ["9092", "bind", "zombie-broker"]
+  max_iterations: 5
+  must_converge: true

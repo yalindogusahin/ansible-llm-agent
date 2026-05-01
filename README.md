@@ -2,11 +2,14 @@
 
 LLM-driven cross-host investigation agent for Ansible.
 
-`ai_agent` is an action plugin that takes a natural-language prompt, asks an
-LLM to generate small Python inspection snippets, ships each snippet to the
-target host through `ai_exec`, observes stdout/stderr/exit, and iterates
-until a diagnosis is reached or budget is exhausted. Per-host, in parallel,
-inside ansible's normal task runtime.
+`ai_agent` is an action plugin that takes a natural-language prompt and
+drives a native tool-use loop against the target host. The model picks one
+allow-listed tool call per iteration (`run_cmd`, `read_file`, `write_file`,
+or optionally `run_python`); `ai_exec` validates and executes the call
+inside the strongest available sandbox; stdout/stderr/exit feed back into
+the next turn. The loop stops when the model calls the `done` tool or when
+iteration/token budget is exhausted. Per-host, in parallel, inside
+ansible's normal task runtime.
 
 It is not a config-management module. It is for the situation where you do
 not know the root cause yet and need to look at several heterogeneous nodes
@@ -28,7 +31,7 @@ on each node based on its facts, group, and role.
 
 ## Permission model
 
-Generated code is constrained by an allow/deny rule set, layered like any
+Tool calls are constrained by an allow/deny rule set, layered like any
 other ansible variable:
 
 ```
@@ -43,7 +46,7 @@ ansible_ai_rules:
     run_cmd: [ps, ss, journalctl, cat]
     read_file: ["/var/log/**", "/proc/**"]
     write_file: []
-    python: [os, json, subprocess]
+    python: []          # leave empty to disable run_python tool entirely
     network: false
   deny:
     run_cmd: [rm, systemctl, kill]
@@ -53,25 +56,41 @@ ansible_ai_rules:
     max_tokens: 8000
 ```
 
-Enforcement runs in three layers:
+What gets exposed to the model:
 
-1. The rules are rendered into the LLM system prompt so the model is told
-   what it can and cannot do.
-2. Before any snippet runs on the target, an AST walk rejects denied
-   imports, denied builtins (`eval`, `exec`, `__import__`, ...), and
-   `subprocess`/`os.system` calls whose argv\[0\] is not in the allow list
-   or whose argv is not statically resolvable.
+- `run_cmd` is offered when `allow.run_cmd` is non-empty. argv[0] must be in
+  the list. Shell forms (`bash -c <payload>`) are rejected.
+- `read_file` is offered when `allow.read_file` is non-empty. The path must
+  match one of the globs and must not match a built-in deny
+  (`/etc/shadow`, `**/.ssh/id_*`, etc.).
+- `write_file` is offered when `allow.write_file` is non-empty. This is the
+  only mutating tool.
+- `run_python` is offered only when `allow.python` is non-empty. Python is
+  opt-in; most fleets leave it disabled. When enabled, an AST walk rejects
+  denied imports, denied builtins (`eval`/`exec`/`__import__`/...), and
+  `subprocess`/`os.system` calls whose argv[0] is not in `allow.run_cmd`.
+- `done` is always offered so the model can terminate.
+
+Enforcement runs at three boundaries:
+
+1. The rules are rendered into the tool descriptions sent to the LLM, so
+   the model sees the exact commands and path patterns it may use.
+2. Before any tool call hits the target, `ai_exec` re-validates the call
+   against the merged rules - argv[0] in allow list, path matches glob,
+   AST clean for `run_python`. A denied call is rejected at the entry point
+   regardless of what the LLM emitted.
 3. Execution itself is wrapped in the strongest available isolation:
-   `bwrap` -> `firejail` -> `nsjail` -> in-process rlimit fallback. Each tool
-   is probed at runtime: presence on PATH is not enough, so a bwrap blocked
-   by AppArmor (e.g. Ubuntu 24's `kernel.apparmor_restrict_unprivileged_userns=1`)
-   automatically falls through to the next tool. Run
+   `bwrap` -> `firejail` -> `nsjail` -> in-process rlimit fallback. Each
+   tool is probed at runtime: presence on PATH is not enough, so a bwrap
+   blocked by AppArmor (e.g. Ubuntu 24's
+   `kernel.apparmor_restrict_unprivileged_userns=1`) automatically falls
+   through to the next tool. Run
    `sudo sysctl kernel.apparmor_restrict_unprivileged_userns=0` to enable
    bwrap on those hosts.
 
-The model can never invoke a denied command, even if the prompt is
-adversarial — the AST layer rejects it at the boundary regardless of what
-the LLM emits.
+The model can never invoke a denied tool call, even if the prompt is
+adversarial - the validation layer in `ai_exec` rejects it at the boundary
+regardless of what the LLM emitted.
 
 ## Providers
 
@@ -256,13 +275,13 @@ agent_result:
   changed: false
   diagnosis: "..."
   iterations_used: 3
-  tokens_used: { input: 4123, output: 712 }
+  tokens_used: { input: 4123, output: 712, cache_read: 3800, cache_write: 0 }
   rules_effective: { allow: {...}, deny: {...}, budget: {...} }
   transcript:
     - step: 1
-      action: run_python
-      code: "..."
-      reason: "..."
+      action: run_cmd
+      input: { argv: [ss, -tlnp], reason: "check listening ports" }
+      reason: "check listening ports"
       stdout: "..."
       stderr: ""
       exit: 0

@@ -3,13 +3,13 @@
 Per host:
   1. Merge rule layers (collection defaults < group_vars < host_vars < play < task).
   2. Build host context from facts + groups + filtered hostvars.
-  3. Loop: LLM -> action JSON -> validate AST -> ai_exec on target -> observation.
-  4. Stop on action=done or budget exhaustion.
+  3. Hand off to module_utils.orchestrator.run_agent.
 """
 
 from __future__ import annotations
 
 import copy
+import os
 from typing import Any
 
 from ansible.errors import AnsibleActionFail
@@ -19,13 +19,13 @@ from ansible_collections.yalindogusahin.ansible_ai.plugins.module_utils import (
     llm_client as llm_mod,
 )
 from ansible_collections.yalindogusahin.ansible_ai.plugins.module_utils import (
+    orchestrator as orch_mod,
+)
+from ansible_collections.yalindogusahin.ansible_ai.plugins.module_utils import (
     prompts as prompts_mod,
 )
 from ansible_collections.yalindogusahin.ansible_ai.plugins.module_utils import (
     rules as rules_mod,
-)
-from ansible_collections.yalindogusahin.ansible_ai.plugins.module_utils import (
-    sandbox as sandbox_mod,
 )
 
 display = Display()
@@ -67,23 +67,10 @@ COLLECTION_DEFAULT_RULES: dict[str, Any] = {
         ],
         "read_file": ["/var/log/**", "/proc/**", "/etc/**", "/sys/**", "/run/**"],
         "write_file": [],
-        "python": [
-            "os",
-            "os.path",
-            "json",
-            "re",
-            "datetime",
-            "collections",
-            "pathlib",
-            "subprocess",
-            "shutil",
-            "shlex",
-            "io",
-            "sys",
-            "itertools",
-            "functools",
-            "typing",
-        ],
+        # Shell-first: run_python is opt-in. Operator can populate this in
+        # group_vars / host_vars / play / task to enable the run_python tool
+        # for compute-heavy investigations (multi-step parse, correlation).
+        "python": [],
         "network": False,
     },
     "deny": {
@@ -132,6 +119,7 @@ class ActionModule(ActionBase):
             "endpoint",
             "api_key",
             "print_result",
+            "stream",
         )
     )
 
@@ -174,114 +162,44 @@ class ActionModule(ActionBase):
             raise AnsibleActionFail(f"ai_agent: LLM client init failed: {e}") from e
 
         host_ctx = self._build_host_ctx(task_vars)
-        system = prompts_mod.build_system_prompt(prompt, rules, host_ctx)
 
-        transcript: list[dict[str, Any]] = []
-        messages: list[dict[str, str]] = [
-            {"role": "user", "content": "Begin investigation. Emit your first action."}
-        ]
-        diagnosis: str | None = None
-        iterations = 0
-        total_input = 0
-        total_output = 0
-        max_iter = rules["budget"]["max_iterations"]
-        max_tokens = rules["budget"]["max_tokens"]
-
-        for iterations in range(1, max_iter + 1):
-            try:
-                completion = client.complete(system, messages, max_tokens=1024)
-            except llm_mod.LLMError as e:
-                transcript.append({"step": iterations, "error": f"llm: {e}"})
-                diagnosis = f"LLM error before convergence: {e}"
-                break
-
-            total_input += completion.input_tokens
-            total_output += completion.output_tokens
-            if total_input + total_output > max_tokens:
-                transcript.append({"step": iterations, "error": "token budget exceeded"})
-                diagnosis = "stopped: token budget exceeded"
-                break
-
-            try:
-                action = prompts_mod.parse_action(completion.text)
-            except ValueError as e:
-                transcript.append({"step": iterations, "error": f"parse: {e}", "raw": completion.text[:500]})
-                messages.append({"role": "assistant", "content": completion.text})
-                messages.append(
-                    {
-                        "role": "user",
-                        "content": f"Your previous output was not valid JSON: {e}. Emit a single JSON object only.",
-                    }
-                )
-                continue
-
-            messages.append({"role": "assistant", "content": completion.text})
-
-            if action["action"] == "done":
-                diagnosis = action.get("summary", "(no summary)")
-                transcript.append(
-                    {
-                        "step": iterations,
-                        "action": "done",
-                        "summary": diagnosis,
-                        "reason": action.get("reason", ""),
-                    }
-                )
-                break
-
-            code = action["code"]
-            try:
-                sandbox_mod.validate_ast(code, rules)
-            except sandbox_mod.SandboxViolation as e:
-                obs = prompts_mod.render_observation("", "", 126, blocked=e.reason)
-                transcript.append(
-                    {
-                        "step": iterations,
-                        "action": "run_python",
-                        "code": code,
-                        "blocked_by_rule": e.reason,
-                    }
-                )
-                messages.append({"role": "user", "content": f"OBSERVATION:\n{obs}"})
-                continue
-
-            module_args = {"code": code, "rules": rules, "timeout": timeout}
-            mr = self._execute_module(
+        def exec_callable(
+            tool: str,
+            tool_input: dict[str, Any],
+            eff_rules: dict[str, Any],
+            to: int,
+        ) -> dict[str, Any]:
+            return self._execute_module(
                 module_name="yalindogusahin.ansible_ai.ai_exec",
-                module_args=module_args,
+                module_args={
+                    "tool": tool,
+                    "input": tool_input,
+                    "rules": eff_rules,
+                    "timeout": to,
+                },
                 task_vars=task_vars,
             )
 
-            stdout = mr.get("stdout", "")
-            stderr = mr.get("stderr", "")
-            exit_code = mr.get("exit", -1)
-            blocked = mr.get("blocked_by_rule")
+        stream_enabled = bool(args.get("stream")) or os.environ.get("ANSIBLE_AI_STREAM") == "1"
+        on_step = self._build_on_step(task_vars) if stream_enabled else None
 
-            transcript.append(
-                {
-                    "step": iterations,
-                    "action": "run_python",
-                    "code": code,
-                    "reason": action.get("reason", ""),
-                    "stdout": stdout,
-                    "stderr": stderr,
-                    "exit": exit_code,
-                    "blocked_by_rule": blocked,
-                }
-            )
-
-            obs = prompts_mod.render_observation(stdout, stderr, exit_code, blocked=blocked)
-            messages.append({"role": "user", "content": f"OBSERVATION:\n{obs}"})
-        else:
-            diagnosis = "stopped: max_iterations reached without 'done'"
+        out = orch_mod.run_agent(
+            prompt=prompt,
+            rules=rules,
+            host_ctx=host_ctx,
+            llm_client=client,
+            exec_callable=exec_callable,
+            timeout=timeout,
+            on_step=on_step,
+        )
 
         result.update(
             {
                 "changed": False,
-                "transcript": transcript,
-                "diagnosis": diagnosis or "(no diagnosis)",
-                "iterations_used": iterations,
-                "tokens_used": {"input": total_input, "output": total_output},
+                "transcript": out["transcript"],
+                "diagnosis": out["diagnosis"],
+                "iterations_used": out["iterations_used"],
+                "tokens_used": out["tokens_used"],
                 "rules_effective": rules,
             }
         )
@@ -308,13 +226,7 @@ class ActionModule(ActionBase):
         result: dict[str, Any],
         prompt: str,
     ) -> dict[str, Any]:
-        """Cluster-level summary mode.
-
-        One LLM call. No rules merge, no AST, no sandbox — this path emits
-        no code on any target host. Intended to be invoked once per play with
-        run_once + delegate_to: localhost, after a per-host ai_agent task has
-        registered its results in hostvars.
-        """
+        """Cluster-level summary mode. One LLM call, no targets touched."""
         results_arg = args.get("results")
         if results_arg is None:
             raise AnsibleActionFail("ai_agent: 'results' is required when aggregate=true")
@@ -337,40 +249,69 @@ class ActionModule(ActionBase):
         except llm_mod.LLMError as e:
             raise AnsibleActionFail(f"ai_agent: LLM client init failed: {e}") from e
 
-        system = prompts_mod.build_aggregate_prompt(prompt, results_arg)
-        messages = [{"role": "user", "content": "Emit your cluster-level summary now."}]
-
         try:
-            completion = client.complete(system, messages, max_tokens=max_tokens)
+            agg = orch_mod.run_aggregate(prompt, results_arg, client, max_tokens=max_tokens)
         except llm_mod.LLMError as e:
             raise AnsibleActionFail(f"ai_agent aggregate: LLM error: {e}") from e
-
-        try:
-            action = prompts_mod.parse_action(completion.text)
         except ValueError as e:
-            raise AnsibleActionFail(
-                f"ai_agent aggregate: malformed JSON from model: {e}; raw={completion.text[:500]!r}"
-            ) from e
+            raise AnsibleActionFail(f"ai_agent aggregate: {e}") from e
 
-        if action.get("action") != "done":
-            raise AnsibleActionFail(
-                f"ai_agent aggregate: expected action='done', got {action.get('action')!r}"
-            )
-
-        summary = action.get("summary", "(no summary)")
         result.update(
             {
                 "changed": False,
-                "diagnosis": summary,
-                "tokens_used": {"input": completion.input_tokens, "output": completion.output_tokens},
+                "diagnosis": agg["diagnosis"],
+                "tokens_used": agg["tokens_used"],
                 "aggregate": True,
-                "host_count": (len(results_arg) if isinstance(results_arg, dict | list) else 0),
+                "host_count": agg["host_count"],
             }
         )
         if args.get("print_result"):
             host = task_vars.get("inventory_hostname", "?")
-            display.display(f"[ai_agent:aggregate@{host}] {summary}")
+            display.display(f"[ai_agent:aggregate@{host}] {agg['diagnosis']}")
         return result
+
+    def _build_on_step(self, task_vars: dict[str, Any]):
+        """Return an on_step callback that prints one line per orchestrator step.
+
+        Format intentionally compact: ansible-playbook output already has plenty
+        of structure; we want a single grep-able line per step.
+        """
+        host = task_vars.get("inventory_hostname", "?")
+
+        def on_step(entry: dict[str, Any]) -> None:
+            step = entry.get("step", "?")
+            if "error" in entry:
+                display.display(f"[ai_agent:{host} step={step}] error: {entry['error']}")
+                return
+            action = entry.get("action", "?")
+            if action == "done":
+                summary = entry.get("summary", "")
+                display.display(f"[ai_agent:{host} step={step}] done: {summary[:200]}")
+                return
+            if action == "text_only":
+                display.display(f"[ai_agent:{host} step={step}] text: {entry.get('text', '')[:200]}")
+                return
+            inp = entry.get("input", {}) or {}
+            head = ""
+            if action == "run_cmd":
+                argv = inp.get("argv", [])
+                head = "argv=" + " ".join(argv[:6]) + (" ..." if len(argv) > 6 else "")
+            elif action == "read_file":
+                head = f"path={inp.get('path', '')}"
+            elif action == "write_file":
+                content = inp.get("content", "")
+                head = f"path={inp.get('path', '')} bytes={len(content)}"
+            elif action == "run_python":
+                head = f"code={len(inp.get('code', ''))}b"
+            else:
+                head = ""
+            tail = f"exit={entry.get('exit', '?')}"
+            blocked = entry.get("blocked_by_rule")
+            if blocked:
+                tail += f" blocked={blocked[:80]}"
+            display.display(f"[ai_agent:{host} step={step}] {action} {head} -> {tail}")
+
+        return on_step
 
     def _build_host_ctx(self, task_vars: dict[str, Any]) -> dict[str, Any]:
         hostname = task_vars.get("inventory_hostname", "<unknown>")
