@@ -76,6 +76,25 @@ options:
     type: bool
     required: false
     default: false
+  aggregate:
+    description:
+      - When true, switch to cluster-aggregation mode. Skips per-host investigation
+        entirely; instead the agent does a single LLM call that synthesizes
+        previously-registered per-host results into one cluster-level diagnosis.
+      - Pair with `run_once: true` and `delegate_to: localhost` so the call fires
+        once per play, not per host.
+      - Requires `results`.
+    type: bool
+    required: false
+    default: false
+  results:
+    description:
+      - Per-host results to aggregate. Required when `aggregate=true`.
+      - Either a dict mapping hostname to the registered ai_agent result, or a
+        flat list of those result dicts (host names will be synthesized).
+      - "Typical pattern - {{ ansible_play_hosts | map('extract', hostvars, 'agent_result') | list }}."
+    type: raw
+    required: false
 notes:
   - Runs as an action plugin on the controller. The actual code execution
     happens inside the ai_exec module on the target host.
@@ -132,6 +151,26 @@ EXAMPLES = r"""
 
 - ansible.builtin.debug:
     var: r.diagnosis
+
+- name: Per-host investigation followed by cluster-level aggregate
+  hosts: kafka
+  tasks:
+    - yalindogusahin.ansible_ai.ai_agent:
+        prompt: "Why can connect not reach the broker on this node?"
+        max_iterations: 8
+      register: agent_result
+
+    - yalindogusahin.ansible_ai.ai_agent:
+        aggregate: true
+        prompt: >-
+          Cluster-level root cause? Which hosts share which symptoms?
+          What is the single likeliest fix?
+        results: >-
+          {{ ansible_play_hosts | map('extract', hostvars, 'agent_result') | list }}
+        print_result: true
+      run_once: true
+      delegate_to: localhost
+      register: cluster
 """
 
 RETURN = r"""
@@ -156,10 +195,18 @@ rules_effective:
   returned: always
   type: dict
 transcript:
-  description: Per-iteration log. Each entry has step, action, code (if run_python), reason, stdout, stderr, exit, blocked_by_rule.
-  returned: always
+  description: Per-iteration log. Each entry has step, action, code (if run_python), reason, stdout, stderr, exit, blocked_by_rule. Not present in aggregate mode.
+  returned: when not aggregate
   type: list
   elements: dict
+aggregate:
+  description: True when this result came from `aggregate=true` mode (cluster-level summary), false otherwise.
+  returned: when aggregate
+  type: bool
+host_count:
+  description: Number of per-host results that were aggregated into the summary.
+  returned: when aggregate
+  type: int
 """
 
 

@@ -146,6 +146,8 @@ in a variable instead.
 | `max_tokens` | int | 8000 | no | Total token budget (input + output) per host across all iterations. When exceeded the loop stops. |
 | `timeout` | int | 30 | no | Per-snippet execution timeout in seconds on the target host. |
 | `print_result` | bool | false | no | When true, write the final diagnosis line to ansible output so you don't need a separate `register` + `debug` task. |
+| `aggregate` | bool | false | no | Switch to cluster-aggregation mode. Skips per-host investigation; does one LLM call that synthesizes registered per-host results into a single cluster-level diagnosis. Pair with `run_once: true` + `delegate_to: localhost`. Requires `results`. |
+| `results` | dict or list | — | when `aggregate=true` | Per-host results to aggregate. Either `{hostname: ai_agent_result}` dict or a flat list of result dicts. See [example 6](#examples). |
 
 `ansible-doc yalindogusahin.ansible_ai.ai_agent` renders the same table at the CLI.
 
@@ -212,6 +214,40 @@ in a variable instead.
 - ansible.builtin.debug:
     var: r.diagnosis
 ```
+
+**6. Per-host investigation followed by cluster-level summary:**
+
+When you fan out across many hosts, the operator usually wants ONE
+cluster-level diagnosis, not one paragraph per host to read. Run the agent
+twice in the same play: first per-host, then once with `aggregate: true`.
+
+```yaml
+- hosts: kafka
+  tasks:
+    - name: Per-host investigation
+      yalindogusahin.ansible_ai.ai_agent:
+        prompt: "Why can connect not reach the broker on this node?"
+        max_iterations: 8
+      register: agent_result
+
+    - name: Cluster-level summary
+      yalindogusahin.ansible_ai.ai_agent:
+        aggregate: true
+        prompt: >-
+          Cluster-level root cause? Which hosts share which symptoms?
+          What is the single likeliest fix?
+        results: >-
+          {{ ansible_play_hosts | map('extract', hostvars, 'agent_result') | list }}
+        print_result: true
+      run_once: true
+      delegate_to: localhost
+```
+
+In `aggregate: true` mode the agent does a single LLM call that synthesizes
+the previously-registered per-host results — no per-host loop, no AST, no
+sandbox. It does not run any code on any target. Pair with
+`run_once: true` and `delegate_to: localhost` so the call fires once per
+play, not once per host.
 
 ## Returned shape
 
