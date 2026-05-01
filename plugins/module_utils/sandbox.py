@@ -119,6 +119,32 @@ def _first_argv0(node: ast.Call) -> str | None:
     return None
 
 
+def _argv_tail_strings(node: ast.Call) -> list[str] | None:
+    """Return statically-known argv tail (everything after argv[0]) as list of strings.
+
+    Returns None if any list element is not a literal string (i.e. not statically
+    resolvable). For string-form argv, splits on whitespace and drops argv[0].
+    """
+    if not node.args:
+        return None
+    first = node.args[0]
+    if isinstance(first, ast.Constant) and isinstance(first.value, str):
+        toks = first.value.split()
+        return toks[1:] if toks else []
+    if isinstance(first, ast.List):
+        tail: list[str] = []
+        for el in first.elts[1:]:
+            s = _literal_str(el)
+            if s is None:
+                return None
+            tail.append(s)
+        return tail
+    return None
+
+
+SHELL_BINARIES = frozenset({"sh", "bash", "zsh", "dash", "ksh", "ash", "fish", "csh", "tcsh"})
+
+
 SUBPROCESS_FUNCS = {
     "subprocess.run",
     "subprocess.Popen",
@@ -176,6 +202,23 @@ def validate_ast(code: str, rules: dict[str, Any]) -> None:
                     )
                 if not rules_mod.is_cmd_allowed(rules, argv0):
                     raise SandboxViolation(f"command not allowed: {argv0}", where=f"line {node.lineno}")
+                # A shell binary on the allow list still defeats the run_cmd allowlist
+                # the moment it's invoked with `-c <payload>`. Reject `-c` form, and
+                # reject when argv tail is not statically resolvable, regardless of
+                # whether the operator added the shell to allow.run_cmd.
+                argv0_base = argv0.rsplit("/", 1)[-1]
+                if argv0_base in SHELL_BINARIES:
+                    tail = _argv_tail_strings(node)
+                    if tail is None:
+                        raise SandboxViolation(
+                            f"shell '{argv0_base}' with non-literal arguments not allowed",
+                            where=f"line {node.lineno}",
+                        )
+                    if any(t == "-c" or t.startswith("-c") for t in tail):
+                        raise SandboxViolation(
+                            f"shell '{argv0_base}' with `-c` not allowed (defeats run_cmd allowlist)",
+                            where=f"line {node.lineno}",
+                        )
 
 
 def _probe(cmd: list[str]) -> bool:

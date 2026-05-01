@@ -94,3 +94,48 @@ def test_dangerous_builtins_set_includes_eval_exec():
     assert "eval" in smod.DANGEROUS_BUILTINS
     assert "exec" in smod.DANGEROUS_BUILTINS
     assert "__import__" in smod.DANGEROUS_BUILTINS
+
+
+def test_validate_ast_rejects_bash_dash_c_list_form():
+    rules = _rules(allow_python=["subprocess"], allow_run=["bash"])
+    code = "import subprocess\nsubprocess.run(['bash', '-c', 'rm -rf /'])"
+    with pytest.raises(smod.SandboxViolation, match="-c"):
+        smod.validate_ast(code, rules)
+
+
+def test_validate_ast_rejects_sh_dash_c_string_form():
+    rules = _rules(allow_python=["os"], allow_run=["sh"])
+    code = "import os\nos.system('sh -c \"rm -rf /\"')"
+    with pytest.raises(smod.SandboxViolation, match="-c"):
+        smod.validate_ast(code, rules)
+
+
+def test_validate_ast_rejects_bash_dash_c_with_glued_payload():
+    rules = _rules(allow_python=["subprocess"], allow_run=["bash"])
+    code = "import subprocess\nsubprocess.run(['bash', '-cevil'])"
+    with pytest.raises(smod.SandboxViolation, match="-c"):
+        smod.validate_ast(code, rules)
+
+
+def test_validate_ast_rejects_absolute_shell_path_dash_c():
+    rules = _rules(allow_python=["subprocess"], allow_run=["/bin/bash"])
+    code = "import subprocess\nsubprocess.run(['/bin/bash', '-c', 'evil'])"
+    with pytest.raises(smod.SandboxViolation, match="-c"):
+        smod.validate_ast(code, rules)
+
+
+def test_validate_ast_allows_bash_without_dash_c():
+    rules = _rules(allow_python=["subprocess"], allow_run=["bash"])
+    code = "import subprocess\nsubprocess.run(['bash', 'script.sh'])"
+    smod.validate_ast(code, rules)
+
+
+def test_validate_ast_rejects_bash_with_non_literal_tail():
+    rules = _rules(allow_python=["subprocess"], allow_run=["bash"])
+    code = "import subprocess\nargs = ['x']\nsubprocess.run(['bash', *args])"
+    with pytest.raises(smod.SandboxViolation, match="non-literal"):
+        smod.validate_ast(code, rules)
+
+
+def test_shell_binaries_set_covers_common_shells():
+    assert {"sh", "bash", "zsh", "dash"}.issubset(smod.SHELL_BINARIES)
