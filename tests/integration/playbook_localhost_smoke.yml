@@ -1,0 +1,55 @@
+---
+# Harmless localhost smoke — runs the full ai_agent loop against the
+# controller itself with `connection: local`. No SSH, no inventory needed.
+# Asks the model to print the kernel version and stop.
+#
+# The collection defaults (read-only commands, no write_file, network=false)
+# already cap the blast radius. The task `rules` block below adds nothing
+# destructive, and the union-merge with defaults keeps everything read-only.
+#
+# Pass provider / endpoint / model via -e extra-vars. Defaults to whatever
+# is in the controller env (ANSIBLE_AI_PROVIDER, ANTHROPIC_API_KEY, etc).
+#
+#   ansible-playbook tests/integration/playbook_localhost_smoke.yml \
+#     -e provider=openai \
+#     -e endpoint=http://127.0.0.1:8000/v1 \
+#     -e api_key=dummy \
+#     -e model=my-local-model
+- name: ai_agent localhost smoke
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Ask the agent to report the kernel version
+      yalindogusahin.ansible_ai.ai_agent:
+        prompt: "Print the kernel version using `uname -r`, then stop."
+        provider: "{{ provider | default(omit) }}"
+        model: "{{ model | default(omit) }}"
+        endpoint: "{{ endpoint | default(omit) }}"
+        api_key: "{{ api_key | default(omit) }}"
+        max_iterations: 3
+        max_tokens: 4000
+        timeout: 10
+        rules:
+          allow:
+            run_cmd: [uname]
+            python: [subprocess]
+            read_file: []
+            write_file: []
+            network: false
+          deny:
+            run_cmd: []
+            python: []
+            write_file: ["**"]
+            read_file: []
+        print_result: true
+      register: smoke
+
+    - name: Assert agent converged with a diagnosis
+      ansible.builtin.assert:
+        that:
+          - smoke.diagnosis is defined
+          - smoke.diagnosis | length > 0
+          - smoke.iterations_used >= 1
+        fail_msg: >-
+          ai_agent did not return a diagnosis. transcript={{ smoke.transcript | default([]) }}
