@@ -16,7 +16,7 @@ tags:
   - debug
   - agent
   - investigation
-repository: https://github.com/yalindogusahin/ansible-llm-agent
+repository: https://github.com/yalindogusahin/ansible-ai-agent
 build_ignore:
   - .git
   - .venv
