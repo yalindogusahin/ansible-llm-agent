@@ -7,6 +7,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-05-01
+
+### Added
+
+- `aggregate: true` task arg on `ai_agent` switches the action plugin into cluster-aggregation mode. One LLM call synthesizes previously-registered per-host results into a single cluster-level diagnosis. No per-host loop, no AST, no sandbox — does not execute code on any target. Pair with `run_once: true` and `delegate_to: localhost`.
+- `results` task arg supplies the per-host inputs to aggregate mode. Accepts `{hostname: ai_agent_result}` dict or flat list of result dicts. Required when `aggregate=true`.
+- New helper `prompts.build_aggregate_prompt(prompt, results)` renders the cluster-aggregation system prompt. New return-value fields in aggregate mode: `aggregate: true`, `host_count: int`.
+
 ## [0.1.4] - 2026-05-01
 
 ### Security
