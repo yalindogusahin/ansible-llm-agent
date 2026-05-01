@@ -31,41 +31,43 @@ on each node based on its facts, group, and role.
 
 ## How it works
 
-Per host, in parallel inside ansible's task runtime:
-
 ```mermaid
-flowchart TD
-    Start([ai_agent task fires per host]) --> Merge[Merge rule layers<br/>defaults &lt; group_vars &lt; host_vars &lt; play &lt; task<br/>deny wins]
-    Merge --> Ctx[Build host context<br/>filtered facts + hostvars]
-    Ctx --> Prompt[Render system prompt<br/>+ tool definitions]
-    Prompt --> Loop{Iter &lt; max?<br/>tokens &lt; budget?}
-    Loop -- no --> Budget[stopped: budget exceeded]
-    Loop -- yes --> LLM[LLM.complete<br/>retry/backoff on 5xx + URLError]
-    LLM --> Validate{Tool call<br/>well-formed?}
-    Validate -- malformed --> Reject[tool_result is_error=true<br/>model self-corrects]
-    Reject --> BadCount{2 bad iters<br/>in a row?}
-    BadCount -- yes --> AbortBad[stopped: invalid tool calls repeatedly]
-    BadCount -- no --> Loop
-    Validate -- done --> Done[summary &rarr; diagnosis]
-    Validate -- run_cmd / read_file<br/>write_file / run_python --> Exec[ai_exec on target host<br/>argv/path/AST re-validated]
-    Exec --> Sandbox[bwrap &rarr; firejail<br/>&rarr; nsjail &rarr; rlimit]
-    Sandbox --> Result[stdout / stderr / exit /<br/>blocked_by_rule]
-    Result --> Append[append tool_result<br/>to messages]
-    Append --> Loop
-    Done --> Save{save_transcript<br/>set?}
-    Budget --> Save
-    AbortBad --> Save
-    Save -- yes --> Write[(write JSON artifact)]
-    Save -- no --> Return
-    Write --> Return[Return diagnosis +<br/>transcript + tokens_used]
+flowchart LR
+    Op([Operator]) -->|runs playbook| C
+
+    subgraph C [Control machine]
+        AP[AI Agent<br/>one helper per machine]
+    end
+
+    subgraph LLM [AI Brain]
+        M[(Claude · GPT · Bedrock<br/>Ollama · local model)]
+    end
+
+    AP <-->|"asks: what should I check?<br/>gets: next step"| M
+
+    subgraph Hosts [Your machines]
+        H1[Machine 1<br/>safe runner]
+        H2[Machine 2<br/>safe runner]
+        HN[Machine N<br/>safe runner]
+    end
+
+    AP -->|do this small check| H1
+    AP -->|do this small check| H2
+    AP -->|do this small check| HN
+    H1 -->|here's what I saw| AP
+    H2 -->|here's what I saw| AP
+    HN -->|here's what I saw| AP
 ```
 
-Three independent enforcement layers gate every tool call: (1) the rules
-are rendered into the tool descriptions sent to the model; (2) the
-orchestrator validates each emitted tool call before dispatch; (3)
-`ai_exec` re-validates against the merged rules and runs the call
-inside the strongest available sandbox. An adversarial prompt cannot
-bypass layers 2 and 3 even if it tricks the model.
+The agent runs a loop per machine: ask the AI brain what to check next,
+run that check inside a safety wall on the target, feed the result back,
+repeat until the AI says "done" or the budget runs out. The "AI brain"
+is any of Anthropic Claude, OpenAI, AWS Bedrock, Ollama, or any
+OpenAI-compatible endpoint (vLLM, llama.cpp servers). The "safety wall"
+is a layered allow/deny rule set plus an OS-level sandbox — see
+[Permission model](#permission-model). With `aggregate: true` the
+controller skips the per-machine loops and does one extra call that
+summarizes the per-machine results into a single cluster diagnosis.
 
 ## Permission model
 
