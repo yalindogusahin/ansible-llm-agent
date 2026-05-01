@@ -29,6 +29,44 @@ collection lets you say:
 and have the model fan out across `hosts: kafka` deciding what to inspect
 on each node based on its facts, group, and role.
 
+## How it works
+
+Per host, in parallel inside ansible's task runtime:
+
+```mermaid
+flowchart TD
+    Start([ai_agent task fires per host]) --> Merge[Merge rule layers<br/>defaults &lt; group_vars &lt; host_vars &lt; play &lt; task<br/>deny wins]
+    Merge --> Ctx[Build host context<br/>filtered facts + hostvars]
+    Ctx --> Prompt[Render system prompt<br/>+ tool definitions]
+    Prompt --> Loop{Iter &lt; max?<br/>tokens &lt; budget?}
+    Loop -- no --> Budget[stopped: budget exceeded]
+    Loop -- yes --> LLM[LLM.complete<br/>retry/backoff on 5xx + URLError]
+    LLM --> Validate{Tool call<br/>well-formed?}
+    Validate -- malformed --> Reject[tool_result is_error=true<br/>model self-corrects]
+    Reject --> BadCount{2 bad iters<br/>in a row?}
+    BadCount -- yes --> AbortBad[stopped: invalid tool calls repeatedly]
+    BadCount -- no --> Loop
+    Validate -- done --> Done[summary &rarr; diagnosis]
+    Validate -- run_cmd / read_file<br/>write_file / run_python --> Exec[ai_exec on target host<br/>argv/path/AST re-validated]
+    Exec --> Sandbox[bwrap &rarr; firejail<br/>&rarr; nsjail &rarr; rlimit]
+    Sandbox --> Result[stdout / stderr / exit /<br/>blocked_by_rule]
+    Result --> Append[append tool_result<br/>to messages]
+    Append --> Loop
+    Done --> Save{save_transcript<br/>set?}
+    Budget --> Save
+    AbortBad --> Save
+    Save -- yes --> Write[(write JSON artifact)]
+    Save -- no --> Return
+    Write --> Return[Return diagnosis +<br/>transcript + tokens_used]
+```
+
+Three independent enforcement layers gate every tool call: (1) the rules
+are rendered into the tool descriptions sent to the model; (2) the
+orchestrator validates each emitted tool call before dispatch; (3)
+`ai_exec` re-validates against the merged rules and runs the call
+inside the strongest available sandbox. An adversarial prompt cannot
+bypass layers 2 and 3 even if it tricks the model.
+
 ## Permission model
 
 Tool calls are constrained by an allow/deny rule set, layered like any
