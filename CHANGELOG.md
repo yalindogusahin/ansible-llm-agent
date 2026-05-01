@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-05-01
+
+### Fixed
+
+- `_parse_openai_response` crashed with `'NoneType' object has no attribute 'get'` when the OpenAI-shape response carried `usage.prompt_tokens_details: null` (vLLM emits this). Switched to `usage.get("prompt_tokens_details") or {}` so a null value falls back to an empty dict.
+
 ## [0.2.0] - 2026-05-01
 
 ### Added

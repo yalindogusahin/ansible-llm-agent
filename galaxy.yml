@@ -1,6 +1,6 @@
 namespace: yalindogusahin
 name: ansible_ai
-version: 0.2.0
+version: 0.2.1
 readme: README.md
 authors:
   - yalindogusahin
