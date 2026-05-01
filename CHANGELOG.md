@@ -7,6 +7,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.1.4] - 2026-05-01
+
+### Security
+
+- AST validator now rejects `bash -c <payload>` (and other POSIX shells: `sh`, `zsh`, `dash`, `ksh`, `ash`, `fish`, `csh`, `tcsh`) even when the shell binary is on the `run_cmd` allow list. A shell with `-c` defeats the `run_cmd` allowlist by passing arbitrary commands as a single string argument; the new check rejects the call at static-analysis time. Also rejects shell calls whose argv tail is not statically resolvable (e.g. `subprocess.run(['bash', *args])`).
+
+### Added
+
+- `tests/integration/playbook_localhost_smoke.yml` — harmless localhost-only smoke playbook that runs the full `ai_agent` loop with `connection: local`, no SSH or inventory required. Useful for manual end-to-end validation without standing up the kafka lab.
+
+## [0.1.3] - 2026-05-01
+
+### Changed
+
+- `galaxy.yml` `repository:` URL updated to `https://github.com/yalindogusahin/ansible-ai-agent` to match the renamed GitHub repo.
+
 ## [0.1.2] - 2026-04-30
 
 ### Added
