@@ -302,8 +302,9 @@ def _parse_openai_response(payload: dict[str, Any]) -> Completion:
                 input=args,
             )
         )
-    usage = payload.get("usage", {})
-    cached = usage.get("prompt_tokens_details", {}).get("cached_tokens", 0)
+    usage = payload.get("usage", {}) or {}
+    details = usage.get("prompt_tokens_details") or {}
+    cached = details.get("cached_tokens", 0)
     return Completion(
         text=text,
         tool_calls=tool_calls,
