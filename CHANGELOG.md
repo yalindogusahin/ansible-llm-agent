@@ -7,6 +7,17 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-05-01
+
+### Fixed
+
+- `plugins/modules/ai_agent.py` DOCUMENTATION block had an unquoted YAML scalar with embedded colons (`Pair with `run_once: true` and `delegate_to: localhost`...`) that broke `ansible-doc yalindogusahin.ansible_ai.ai_agent` and ansible-lint's `args[module]` rule. Wrapped the bullet in double quotes.
+
+### Changed
+
+- `tests/eval/fixtures/` excluded from `ansible-lint` — those YAMLs are scripted-LLM eval test data with intentionally long synthetic command-output strings, not playbooks. Long-line violations were noise.
+- Applied `ruff format` across `plugins/` and `tests/`. No behavior change; just whitespace + line-wrapping to match CI's `ruff-format` hook.
+
 ## [0.3.0] - 2026-05-01
 
 ### Added
