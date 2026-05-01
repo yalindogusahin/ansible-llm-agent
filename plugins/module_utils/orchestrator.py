@@ -104,13 +104,17 @@ def run_agent(
         # Streaming must never break the loop - swallow display errors.
         with contextlib.suppress(Exception):
             on_step(entry)
+
     system = prompts_mod.build_system_prompt(prompt, rules, host_ctx)
     tools = tools_mod.build_tools(rules)
     allowed_names = {t["name"] for t in tools}
 
     transcript: list[dict[str, Any]] = []
     messages: list[dict[str, Any]] = [
-        {"role": "user", "content": "Begin the investigation. Use tools as needed and call `done` when finished."}
+        {
+            "role": "user",
+            "content": "Begin the investigation. Use tools as needed and call `done` when finished.",
+        }
     ]
     diagnosis: str | None = None
     iterations = 0
@@ -289,7 +293,11 @@ def run_aggregate(
 ) -> dict[str, Any]:
     """Single-shot cluster aggregation. One LLM call, only the `done` tool."""
     system = prompts_mod.build_aggregate_prompt(prompt, results)
-    done_tool = [t for t in tools_mod.build_tools({"allow": {}, "deny": {}, "budget": {}}) if t["name"] == tools_mod.DONE]
+    done_tool = [
+        t
+        for t in tools_mod.build_tools({"allow": {}, "deny": {}, "budget": {}})
+        if t["name"] == tools_mod.DONE
+    ]
     messages = [{"role": "user", "content": "Emit your cluster-level summary now."}]
     completion = llm_client.complete(system, messages, done_tool, max_tokens=max_tokens)
 

@@ -16,3 +16,7 @@ exclude_paths:
   # file instead. ansible-playbook --syntax-check still validates it during CI.
   - tests/integration/playbook_debug.yml
   - tests/integration/playbook_localhost_smoke.yml
+  # tests/eval/fixtures/*.yaml are scripted-LLM eval test data (synthetic
+  # tool stdout/stderr inline), not ansible playbooks. Long lines are
+  # intentional - they hold raw command output the agent is expected to parse.
+  - tests/eval/fixtures/

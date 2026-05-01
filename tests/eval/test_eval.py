@@ -100,20 +100,17 @@ def test_eval_fixture(fixture: Fixture):
     expect = fixture.expect
 
     for needle in expect.get("diagnosis_contains", []):
-        assert needle.lower() in diag.lower(), (
-            f"diagnosis missing expected substring {needle!r}; got: {diag!r}"
-        )
+        assert (
+            needle.lower() in diag.lower()
+        ), f"diagnosis missing expected substring {needle!r}; got: {diag!r}"
 
     for pattern in expect.get("diagnosis_matches", []):
-        assert re.search(pattern, diag), (
-            f"diagnosis did not match pattern {pattern!r}; got: {diag!r}"
-        )
+        assert re.search(pattern, diag), f"diagnosis did not match pattern {pattern!r}; got: {diag!r}"
 
     if "max_iterations" in expect:
-        assert out["iterations_used"] <= expect["max_iterations"], (
-            f"used {out['iterations_used']} iterations, "
-            f"expected <= {expect['max_iterations']}"
-        )
+        assert (
+            out["iterations_used"] <= expect["max_iterations"]
+        ), f"used {out['iterations_used']} iterations, expected <= {expect['max_iterations']}"
 
     if expect.get("must_converge", True):
         assert not diag.startswith("stopped:"), f"agent did not converge: {diag}"

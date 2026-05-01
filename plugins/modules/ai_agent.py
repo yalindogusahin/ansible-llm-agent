@@ -91,8 +91,7 @@ options:
       - When true, switch to cluster-aggregation mode. Skips per-host investigation
         entirely; instead the agent does a single LLM call that synthesizes
         previously-registered per-host results into one cluster-level diagnosis.
-      - Pair with `run_once: true` and `delegate_to: localhost` so the call fires
-        once per play, not per host.
+      - "Pair with `run_once: true` and `delegate_to: localhost` so the call fires once per play, not per host."
       - Requires `results`.
     type: bool
     required: false

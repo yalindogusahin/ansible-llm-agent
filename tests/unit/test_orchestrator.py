@@ -66,7 +66,9 @@ def test_run_agent_emits_on_step_for_each_action():
     completions = [
         lmod.Completion(
             text="",
-            tool_calls=[lmod.ToolCall(id="1", name="run_cmd", input={"argv": ["ss", "-tlnp"], "reason": "x"})],
+            tool_calls=[
+                lmod.ToolCall(id="1", name="run_cmd", input={"argv": ["ss", "-tlnp"], "reason": "x"})
+            ],
             input_tokens=10,
             output_tokens=5,
         ),

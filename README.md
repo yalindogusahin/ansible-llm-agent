@@ -31,43 +31,63 @@ on each node based on its facts, group, and role.
 
 ## How it works
 
+The controller fans out one ReAct loop per target host. Each loop talks
+to the chosen LLM provider over HTTP and ships individual tool calls to
+the target's sandboxed `ai_exec` module.
+
 ```mermaid
 flowchart LR
-    Op([Operator]) -->|runs playbook| C
+    Op([Operator])
+    Op -->|ansible-playbook| C
 
-    subgraph C [Control machine]
-        AP[AI Agent<br/>one helper per machine]
+    subgraph C [Ansible Controller]
+        direction TB
+        AP[ai_agent action plugin]
+        AP -.fan-out per host.-> L1[host-1 loop]
+        AP -.fan-out per host.-> L2[host-2 loop]
+        AP -.fan-out per host.-> LN[host-N loop]
     end
 
-    subgraph LLM [AI Brain]
-        M[(Claude · GPT · Bedrock<br/>Ollama · local model)]
+    subgraph LLM [LLM Provider]
+        M[(Claude · OpenAI · Bedrock<br/>Ollama · vLLM-compatible)]
     end
 
-    AP <-->|"asks: what should I check?<br/>gets: next step"| M
+    L1 <-->|system + tools<br/>tool_result| M
+    L2 <-->|system + tools<br/>tool_result| M
+    LN <-->|system + tools<br/>tool_result| M
 
-    subgraph Hosts [Your machines]
-        H1[Machine 1<br/>safe runner]
-        H2[Machine 2<br/>safe runner]
-        HN[Machine N<br/>safe runner]
+    subgraph H1 [Target host-1]
+        E1[ai_exec module] --> S1[Sandbox<br/>bwrap / firejail /<br/>nsjail / rlimit]
+    end
+    subgraph H2 [Target host-2]
+        E2[ai_exec module] --> S2[Sandbox<br/>bwrap / firejail /<br/>nsjail / rlimit]
+    end
+    subgraph HN [Target host-N]
+        EN[ai_exec module] --> SN[Sandbox<br/>bwrap / firejail /<br/>nsjail / rlimit]
     end
 
-    AP -->|do this small check| H1
-    AP -->|do this small check| H2
-    AP -->|do this small check| HN
-    H1 -->|here's what I saw| AP
-    H2 -->|here's what I saw| AP
-    HN -->|here's what I saw| AP
+    L1 -->|tool call| E1
+    L2 -->|tool call| E2
+    LN -->|tool call| EN
+    E1 -->|stdout / stderr / exit| L1
+    E2 -->|stdout / stderr / exit| L2
+    EN -->|stdout / stderr / exit| LN
 ```
 
-The agent runs a loop per machine: ask the AI brain what to check next,
-run that check inside a safety wall on the target, feed the result back,
-repeat until the AI says "done" or the budget runs out. The "AI brain"
-is any of Anthropic Claude, OpenAI, AWS Bedrock, Ollama, or any
-OpenAI-compatible endpoint (vLLM, llama.cpp servers). The "safety wall"
-is a layered allow/deny rule set plus an OS-level sandbox — see
-[Permission model](#permission-model). With `aggregate: true` the
-controller skips the per-machine loops and does one extra call that
-summarizes the per-machine results into a single cluster diagnosis.
+Each per-host loop iterates: ask the LLM with the merged rule set + filtered
+host facts, validate the tool call, ship it to the target via the standard
+ansible module pipeline, feed the result back as the next user turn. The
+loop stops on `done`, on iteration / token budget, or on repeated malformed
+tool calls. With `aggregate: true` the controller skips the per-host loops
+and does one extra LLM call that synthesizes the registered per-host
+results into a single cluster-level diagnosis.
+
+Three independent enforcement layers gate every tool call: (1) the rules
+are rendered into the tool descriptions sent to the model; (2) the
+orchestrator validates each emitted tool call before dispatch; (3)
+`ai_exec` re-validates against the merged rules and runs the call inside
+the strongest available sandbox. An adversarial prompt cannot bypass
+layers 2 and 3 even if it tricks the model.
 
 ## Permission model
 

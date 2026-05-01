@@ -33,8 +33,9 @@ _RETRYABLE_HTTP_CODES = frozenset({408, 425, 429, 500, 502, 503, 504})
 
 def _backoff_delay(attempt: int) -> float:
     """Exponential backoff with jitter. attempt is 0-indexed."""
-    base = 0.5 * (2 ** attempt)  # 0.5, 1, 2, 4
+    base = 0.5 * (2**attempt)  # 0.5, 1, 2, 4
     return base + random.uniform(0, base * 0.25)
+
 
 DEFAULT_MODELS = {
     "claude": "claude-opus-4-7",
@@ -152,9 +153,7 @@ class ClaudeClient(LLMClient):
 
     def complete(self, system, messages, tools, max_tokens):
         api_key = (
-            self.api_key
-            or os.environ.get("ANTHROPIC_API_KEY")
-            or os.environ.get("ANTHROPIC_AUTH_TOKEN")
+            self.api_key or os.environ.get("ANTHROPIC_API_KEY") or os.environ.get("ANTHROPIC_AUTH_TOKEN")
         )
         if not api_key:
             raise LLMError("ANTHROPIC_API_KEY or ANTHROPIC_AUTH_TOKEN not set")
@@ -216,9 +215,7 @@ class BedrockClient(LLMClient):
             # honor the same cache_control field as the direct Anthropic API
             # for supported regions/models; on regions that don't support it
             # the field is ignored.
-            "system": [
-                {"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}
-            ],
+            "system": [{"type": "text", "text": system, "cache_control": {"type": "ephemeral"}}],
             "messages": messages,
         }
         if tools:
@@ -392,9 +389,7 @@ def _to_ollama_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
             for block in blocks:
                 btype = block.get("type")
                 if btype == "tool_result":
-                    out.append(
-                        {"role": "tool", "content": str(block.get("content", ""))}
-                    )
+                    out.append({"role": "tool", "content": str(block.get("content", ""))})
                 elif btype == "text":
                     texts.append(block.get("text", ""))
             if texts:
