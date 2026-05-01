@@ -28,6 +28,44 @@ from .sandbox import SandboxResult
 ExecCallable = Callable[[str, dict[str, Any], dict[str, Any], int], dict[str, Any]]
 StepCallback = Callable[[dict[str, Any]], None]
 
+# How many consecutive iterations of *only* malformed tool calls we tolerate
+# before aborting. Two means: one bad turn the model can self-correct from,
+# two in a row means it isn't going to.
+MAX_CONSECUTIVE_BAD = 2
+
+
+def _validate_tool_call(name: str, inp: dict[str, Any], allowed_names: set[str]) -> str | None:
+    """Lightweight check that a tool_use block can be dispatched.
+
+    Returns None when the call is well-formed enough to hand to exec_callable;
+    otherwise a short error string. Catches the cases where the LLM emits
+    a tool name we don't expose, or omits a required field. Deeper validation
+    (argv allow-list, path globs, AST) still happens in tools.exec_tool / ai_exec.
+    """
+    if name not in allowed_names:
+        return f"unknown tool '{name}'; available: {sorted(allowed_names)}"
+    inp = inp or {}
+    if name == tools_mod.RUN_CMD:
+        argv = inp.get("argv")
+        if not isinstance(argv, list) or not argv or not all(isinstance(x, str) for x in argv):
+            return "run_cmd requires 'argv' as a non-empty list of strings"
+    elif name == tools_mod.READ_FILE:
+        if not isinstance(inp.get("path"), str) or not inp.get("path"):
+            return "read_file requires 'path' as a non-empty string"
+    elif name == tools_mod.WRITE_FILE:
+        if not isinstance(inp.get("path"), str) or not inp.get("path"):
+            return "write_file requires 'path' as a non-empty string"
+        if not isinstance(inp.get("content"), str):
+            return "write_file requires 'content' as a string"
+    elif name == tools_mod.RUN_PYTHON:
+        code = inp.get("code")
+        if not isinstance(code, str) or not code.strip():
+            return "run_python requires 'code' as a non-empty string"
+    elif name == tools_mod.DONE:
+        if not isinstance(inp.get("summary"), str):
+            return "done requires 'summary' as a string"
+    return None
+
 
 def _coerce_result(raw: Any) -> SandboxResult:
     """Accept either a SandboxResult or a plain dict (ai_exec returns dicts)."""
@@ -68,6 +106,7 @@ def run_agent(
             on_step(entry)
     system = prompts_mod.build_system_prompt(prompt, rules, host_ctx)
     tools = tools_mod.build_tools(rules)
+    allowed_names = {t["name"] for t in tools}
 
     transcript: list[dict[str, Any]] = []
     messages: list[dict[str, Any]] = [
@@ -79,6 +118,7 @@ def run_agent(
     total_output = 0
     total_cache_read = 0
     total_cache_write = 0
+    consecutive_bad = 0
     max_iter = rules["budget"]["max_iterations"]
     max_tokens = rules["budget"]["max_tokens"]
 
@@ -134,7 +174,34 @@ def run_agent(
         # Process tool calls in order; `done` short-circuits.
         tool_results: list[dict[str, Any]] = []
         done_seen = False
+        iter_had_good_call = False
         for tc in completion.tool_calls:
+            err = _validate_tool_call(tc.name, tc.input or {}, allowed_names)
+            if err is not None:
+                # Malformed call - tell the model exactly what was wrong via
+                # tool_result and let it self-correct on the next turn.
+                tool_results.append(
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": tc.id,
+                        "content": f"tool call rejected: {err}",
+                        "is_error": True,
+                    }
+                )
+                entry = {
+                    "step": iterations,
+                    "action": tc.name,
+                    "input": tc.input,
+                    "reason": (tc.input or {}).get("reason", ""),
+                    "stdout": "",
+                    "stderr": "",
+                    "exit": -1,
+                    "blocked_by_rule": err,
+                }
+                transcript.append(entry)
+                _emit(entry)
+                continue
+
             if tc.name == tools_mod.DONE:
                 diagnosis = tc.input.get("summary", "(no summary)")
                 entry = {
@@ -146,6 +213,7 @@ def run_agent(
                 transcript.append(entry)
                 _emit(entry)
                 done_seen = True
+                iter_had_good_call = True
                 break
 
             try:
@@ -166,6 +234,7 @@ def run_agent(
             }
             transcript.append(entry)
             _emit(entry)
+            iter_had_good_call = True
 
             tool_results.append(
                 {
@@ -180,6 +249,20 @@ def run_agent(
 
         if done_seen:
             break
+
+        if iter_had_good_call:
+            consecutive_bad = 0
+        else:
+            consecutive_bad += 1
+            if consecutive_bad >= MAX_CONSECUTIVE_BAD:
+                entry = {
+                    "step": iterations,
+                    "error": "model emitted invalid tool calls repeatedly",
+                }
+                transcript.append(entry)
+                _emit(entry)
+                diagnosis = "stopped: model emitted invalid tool calls repeatedly"
+                break
 
         messages.append({"role": "user", "content": tool_results})
     else:

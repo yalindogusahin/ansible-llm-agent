@@ -7,6 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- `save_transcript: <path>` task arg writes a JSON artifact (prompt, rules, transcript, diagnosis, tokens, provider, model) for offline replay/debug. The literal `{host}` in the path is substituted with `inventory_hostname` so multi-host fan-outs don't collide. Write failures are non-fatal.
+- Retry/backoff on transient LLM errors. `LLMClient._post_json` now retries up to `max_retries` times (default 3) on `URLError` and HTTP 408/425/429/500/502/503/504 with exponential backoff (0.5/1/2/4s + jitter). 4xx auth/validation errors are not retried. New `max_retries` ctor arg on `LLMClient` and `get_client()` — set to `0` to disable.
+- Orchestrator validates LLM tool calls before dispatch. Unknown tool names or malformed inputs (missing `argv`/`path`/`code`/etc.) are rejected and the model sees a `tool_result` with `is_error: true` explaining what was wrong, so it can self-correct on the next turn. Two consecutive iterations of only-malformed calls aborts the loop with diagnosis `"stopped: model emitted invalid tool calls repeatedly"`.
+
 ## [0.2.1] - 2026-05-01
 
 ### Fixed

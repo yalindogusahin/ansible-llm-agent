@@ -105,6 +105,13 @@ options:
       - "Typical pattern - {{ ansible_play_hosts | map('extract', hostvars, 'agent_result') | list }}."
     type: raw
     required: false
+  save_transcript:
+    description:
+      - "If set, write a JSON artifact of the run (prompt, rules, transcript, diagnosis, tokens, model/provider) to this path."
+      - "The string `{host}` is substituted with `inventory_hostname` so multi-host plays don't collide."
+      - "Failures are non-fatal - the warning is logged but the task still succeeds."
+    type: str
+    required: false
 notes:
   - Runs as an action plugin on the controller. The actual code execution
     happens inside the ai_exec module on the target host.

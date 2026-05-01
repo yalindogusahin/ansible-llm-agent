@@ -9,6 +9,7 @@ Per host:
 from __future__ import annotations
 
 import copy
+import json
 import os
 from typing import Any
 
@@ -120,6 +121,7 @@ class ActionModule(ActionBase):
             "api_key",
             "print_result",
             "stream",
+            "save_transcript",
         )
     )
 
@@ -203,6 +205,19 @@ class ActionModule(ActionBase):
                 "rules_effective": rules,
             }
         )
+
+        save_path = args.get("save_transcript")
+        if save_path:
+            self._write_transcript(
+                path=str(save_path),
+                task_vars=task_vars,
+                prompt=prompt,
+                host_ctx=host_ctx,
+                rules=rules,
+                run_out=out,
+                provider_name=getattr(client, "name", None),
+                model=getattr(client, "model", None),
+            )
 
         if args.get("print_result"):
             host = task_vars.get("inventory_hostname", "?")
@@ -312,6 +327,46 @@ class ActionModule(ActionBase):
             display.display(f"[ai_agent:{host} step={step}] {action} {head} -> {tail}")
 
         return on_step
+
+    def _write_transcript(
+        self,
+        path: str,
+        task_vars: dict[str, Any],
+        prompt: str,
+        host_ctx: dict[str, Any],
+        rules: dict[str, Any],
+        run_out: dict[str, Any],
+        provider_name: str | None,
+        model: str | None,
+    ) -> None:
+        """Write a JSON artifact of the run for offline replay/debug.
+
+        `path` may contain `{host}` to disambiguate per-host files when running
+        a fan-out play. Failures are non-fatal - we warn and continue, since
+        losing the artifact must not fail an otherwise-successful run.
+        """
+        host = task_vars.get("inventory_hostname", "localhost")
+        rendered = path.replace("{host}", str(host))
+        artifact = {
+            "prompt": prompt,
+            "host": host,
+            "host_ctx": host_ctx,
+            "rules": rules,
+            "transcript": run_out.get("transcript", []),
+            "diagnosis": run_out.get("diagnosis", ""),
+            "iterations_used": run_out.get("iterations_used", 0),
+            "tokens_used": run_out.get("tokens_used", {}),
+            "provider": provider_name,
+            "model": model,
+        }
+        try:
+            parent = os.path.dirname(os.path.abspath(rendered))
+            if parent:
+                os.makedirs(parent, exist_ok=True)
+            with open(rendered, "w", encoding="utf-8") as f:
+                json.dump(artifact, f, indent=2, default=str)
+        except OSError as e:
+            display.warning(f"ai_agent: save_transcript to {rendered} failed: {e}")
 
     def _build_host_ctx(self, task_vars: dict[str, Any]) -> dict[str, Any]:
         hostname = task_vars.get("inventory_hostname", "<unknown>")

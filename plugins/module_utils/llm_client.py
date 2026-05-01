@@ -18,11 +18,23 @@ from __future__ import annotations
 
 import json
 import os
+import random
+import time
 import urllib.error
 import urllib.request
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from typing import Any
+
+# HTTP status codes worth retrying. 408 request timeout, 429 rate limit,
+# 5xx server-side hiccups. 4xx other (auth, validation) won't recover.
+_RETRYABLE_HTTP_CODES = frozenset({408, 425, 429, 500, 502, 503, 504})
+
+
+def _backoff_delay(attempt: int) -> float:
+    """Exponential backoff with jitter. attempt is 0-indexed."""
+    base = 0.5 * (2 ** attempt)  # 0.5, 1, 2, 4
+    return base + random.uniform(0, base * 0.25)
 
 DEFAULT_MODELS = {
     "claude": "claude-opus-4-7",
@@ -63,11 +75,15 @@ class LLMClient(ABC):
         timeout: int = 60,
         endpoint: str | None = None,
         api_key: str | None = None,
+        max_retries: int = 3,
     ):
         self.model = model or DEFAULT_MODELS[self.name]
         self.timeout = timeout
         self.endpoint = endpoint
         self.api_key = api_key
+        # 0 disables retries; otherwise number of additional attempts after
+        # the first failure. Total attempts = max_retries + 1.
+        self.max_retries = max(0, int(max_retries))
 
     @abstractmethod
     def complete(
@@ -80,15 +96,24 @@ class LLMClient(ABC):
 
     def _post_json(self, url: str, headers: dict[str, str], body: dict[str, Any]) -> dict[str, Any]:
         data = json.dumps(body).encode("utf-8")
-        req = urllib.request.Request(url, data=data, headers=headers, method="POST")
-        try:
-            with urllib.request.urlopen(req, timeout=self.timeout) as resp:
-                return json.loads(resp.read().decode("utf-8"))
-        except urllib.error.HTTPError as e:
-            detail = e.read().decode("utf-8", "replace")
-            raise LLMError(f"{self.name} HTTP {e.code}: {detail[:500]}") from e
-        except urllib.error.URLError as e:
-            raise LLMError(f"{self.name} URL error: {e.reason}") from e
+        for attempt in range(self.max_retries + 1):
+            req = urllib.request.Request(url, data=data, headers=headers, method="POST")
+            try:
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                    return json.loads(resp.read().decode("utf-8"))
+            except urllib.error.HTTPError as e:
+                if e.code in _RETRYABLE_HTTP_CODES and attempt < self.max_retries:
+                    time.sleep(_backoff_delay(attempt))
+                    continue
+                detail = e.read().decode("utf-8", "replace")
+                raise LLMError(f"{self.name} HTTP {e.code}: {detail[:500]}") from e
+            except urllib.error.URLError as e:
+                if attempt < self.max_retries:
+                    time.sleep(_backoff_delay(attempt))
+                    continue
+                raise LLMError(f"{self.name} URL error: {e.reason}") from e
+        # Loop exits only via return or raise; this is unreachable.
+        raise LLMError(f"{self.name}: retry loop exhausted unexpectedly")
 
 
 # Anthropic / Bedrock --------------------------------------------------------
@@ -458,8 +483,15 @@ def get_client(
     timeout: int = 60,
     endpoint: str | None = None,
     api_key: str | None = None,
+    max_retries: int = 3,
 ) -> LLMClient:
     p = (provider or os.environ.get("ANSIBLE_AI_PROVIDER") or "claude").lower()
     if p not in _REGISTRY:
         raise LLMError(f"unknown provider: {p}; known: {sorted(_REGISTRY)}")
-    return _REGISTRY[p](model=model, timeout=timeout, endpoint=endpoint, api_key=api_key)
+    return _REGISTRY[p](
+        model=model,
+        timeout=timeout,
+        endpoint=endpoint,
+        api_key=api_key,
+        max_retries=max_retries,
+    )

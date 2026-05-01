@@ -167,6 +167,7 @@ in a variable instead.
 | `print_result` | bool | false | no | When true, write the final diagnosis line to ansible output so you don't need a separate `register` + `debug` task. |
 | `aggregate` | bool | false | no | Switch to cluster-aggregation mode. Skips per-host investigation; does one LLM call that synthesizes registered per-host results into a single cluster-level diagnosis. Pair with `run_once: true` + `delegate_to: localhost`. Requires `results`. |
 | `results` | dict or list | — | when `aggregate=true` | Per-host results to aggregate. Either `{hostname: ai_agent_result}` dict or a flat list of result dicts. See [example 6](#examples). |
+| `save_transcript` | str | — | no | If set, write a JSON artifact of the run (prompt, rules, transcript, diagnosis, tokens, model/provider) to this path. The string `{host}` is substituted with `inventory_hostname` so multi-host plays don't collide. Failures are non-fatal (logged as a warning). |
 
 `ansible-doc yalindogusahin.ansible_ai.ai_agent` renders the same table at the CLI.
 

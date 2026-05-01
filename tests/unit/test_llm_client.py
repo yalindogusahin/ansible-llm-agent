@@ -327,6 +327,110 @@ def test_claude_complete_body_marks_system_and_tools_for_caching(monkeypatch):
     assert body["tools"][-1]["cache_control"] == {"type": "ephemeral"}
 
 
+def test_post_json_retries_on_5xx(monkeypatch):
+    """5xx responses retry up to max_retries; sleep is patched to a no-op."""
+    import urllib.error
+
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout):  # noqa: ARG001
+        calls["n"] += 1
+        if calls["n"] < 3:
+            raise urllib.error.HTTPError(req.full_url, 503, "busy", {}, _FakeBody(b"down"))
+        return _FakeResp(b'{"ok": true}')
+
+    monkeypatch.setattr(lmod.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(lmod.time, "sleep", lambda _s: None)
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "k")
+    client = lmod.ClaudeClient(max_retries=3)
+    out = client._post_json("http://x/y", {}, {"hi": 1})
+    assert out == {"ok": True}
+    assert calls["n"] == 3
+
+
+def test_post_json_does_not_retry_on_4xx(monkeypatch):
+    """4xx auth/validation errors do NOT retry."""
+    import urllib.error
+
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout):  # noqa: ARG001
+        calls["n"] += 1
+        raise urllib.error.HTTPError(req.full_url, 401, "no auth", {}, _FakeBody(b"bad key"))
+
+    monkeypatch.setattr(lmod.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(lmod.time, "sleep", lambda _s: None)
+    client = lmod.ClaudeClient(max_retries=3)
+    with pytest.raises(lmod.LLMError, match="HTTP 401"):
+        client._post_json("http://x/y", {}, {})
+    assert calls["n"] == 1
+
+
+def test_post_json_retries_on_url_error(monkeypatch):
+    """Connection errors (URLError) retry."""
+    import urllib.error
+
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout):  # noqa: ARG001
+        calls["n"] += 1
+        if calls["n"] < 2:
+            raise urllib.error.URLError("connection refused")
+        return _FakeResp(b'{"ok": 1}')
+
+    monkeypatch.setattr(lmod.urllib.request, "urlopen", fake_urlopen)
+    monkeypatch.setattr(lmod.time, "sleep", lambda _s: None)
+    client = lmod.ClaudeClient(max_retries=3)
+    assert client._post_json("http://x/y", {}, {}) == {"ok": 1}
+    assert calls["n"] == 2
+
+
+def test_post_json_max_retries_zero_disables(monkeypatch):
+    """max_retries=0 means no retries; first failure raises."""
+    import urllib.error
+
+    calls = {"n": 0}
+
+    def fake_urlopen(req, timeout):  # noqa: ARG001
+        calls["n"] += 1
+        raise urllib.error.HTTPError(req.full_url, 503, "down", {}, _FakeBody(b"x"))
+
+    monkeypatch.setattr(lmod.urllib.request, "urlopen", fake_urlopen)
+    client = lmod.ClaudeClient(max_retries=0)
+    with pytest.raises(lmod.LLMError):
+        client._post_json("http://x/y", {}, {})
+    assert calls["n"] == 1
+
+
+class _FakeBody:
+    """Minimal HTTPError body shim - HTTPError.read() expects a file-like fp."""
+
+    def __init__(self, data: bytes):
+        self._data = data
+
+    def read(self, *_a, **_k):
+        return self._data
+
+    def close(self):
+        pass
+
+
+class _FakeResp:
+    """Context-manager urlopen response shim."""
+
+    def __init__(self, data: bytes):
+        self._data = data
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *_a):
+        return False
+
+    def read(self):
+        return self._data
+
+
 def test_claude_complete_omits_tools_when_empty(monkeypatch):
     captured: dict[str, Any] = {}
 

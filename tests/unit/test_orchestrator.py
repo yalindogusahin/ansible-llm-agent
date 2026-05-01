@@ -144,6 +144,75 @@ def test_run_agent_token_budget_stops_loop():
     assert "token budget" in out["diagnosis"]
 
 
+def test_run_agent_rejects_unknown_tool_and_recovers():
+    """Unknown tool name on iter 1, valid done on iter 2 -> diagnosis succeeds."""
+    completions = [
+        lmod.Completion(
+            tool_calls=[lmod.ToolCall(id="1", name="hack_db", input={"q": "drop"})],
+            input_tokens=5,
+            output_tokens=5,
+        ),
+        lmod.Completion(
+            tool_calls=[lmod.ToolCall(id="2", name="done", input={"summary": "fine", "reason": "y"})],
+            input_tokens=5,
+            output_tokens=5,
+        ),
+    ]
+    out = omod.run_agent(
+        prompt="p",
+        rules=_rules(),
+        host_ctx=_host_ctx(),
+        llm_client=_ScriptedClient(completions),
+        exec_callable=_ok_target,
+    )
+    assert out["diagnosis"] == "fine"
+    bad_step = out["transcript"][0]
+    assert bad_step["action"] == "hack_db"
+    assert "unknown tool" in bad_step["blocked_by_rule"]
+
+
+def test_run_agent_rejects_run_cmd_missing_argv():
+    """run_cmd without argv is malformed; orchestrator should refuse to dispatch."""
+    completions = [
+        lmod.Completion(
+            tool_calls=[lmod.ToolCall(id="1", name="run_cmd", input={"reason": "x"})],
+            input_tokens=5,
+            output_tokens=5,
+        ),
+        lmod.Completion(
+            tool_calls=[lmod.ToolCall(id="2", name="done", input={"summary": "k", "reason": "y"})],
+            input_tokens=5,
+            output_tokens=5,
+        ),
+    ]
+    out = omod.run_agent(
+        prompt="p",
+        rules=_rules(),
+        host_ctx=_host_ctx(),
+        llm_client=_ScriptedClient(completions),
+        exec_callable=_ok_target,
+    )
+    assert out["diagnosis"] == "k"
+    assert "argv" in out["transcript"][0]["blocked_by_rule"]
+
+
+def test_run_agent_aborts_after_two_consecutive_bad_iterations():
+    """Two iterations of only-malformed calls -> loop exits with diagnostic."""
+    bad = lmod.Completion(
+        tool_calls=[lmod.ToolCall(id="1", name="garbage_tool", input={})],
+        input_tokens=5,
+        output_tokens=5,
+    )
+    out = omod.run_agent(
+        prompt="p",
+        rules=_rules(),
+        host_ctx=_host_ctx(),
+        llm_client=_ScriptedClient([bad, bad, bad]),
+        exec_callable=_ok_target,
+    )
+    assert "invalid tool calls" in out["diagnosis"]
+
+
 def test_run_agent_aggregates_cache_tokens():
     completions = [
         lmod.Completion(
