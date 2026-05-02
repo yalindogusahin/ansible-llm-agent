@@ -94,3 +94,13 @@ releases:
         - "ci(deps): bump actions/checkout to v6.0.2, actions/setup-python to v6.2.0, actions/upload-artifact, softprops/action-gh-release."
         - "tests: tests/integration/stub_llm.py added for manual two-turn smoke without an LLM provider."
         - "roles/ai_agent/meta/main.yml added so the role surfaces conservative default rules through Galaxy metadata."
+
+  0.3.3:
+    release_date: "2026-05-02"
+    changes:
+      release_summary: |
+        Galaxy publish unblocked: roles/ai_agent now ships a role README so the
+        Galaxy importer accepts the upload. v0.3.2 was tagged but never made it
+        to Galaxy because of this and a missing publish secret.
+      bugfixes:
+        - "roles/ai_agent: add README.md so Galaxy import does not reject the role with 'No role readme found'."
