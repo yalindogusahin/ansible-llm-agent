@@ -243,7 +243,10 @@ def main():
             "prompt": {"type": "str", "required": True},
             "rules": {"type": "dict"},
             "max_iterations": {"type": "int", "default": 5},
-            "max_tokens": {"type": "int", "default": 8000},
+            # no_log=False is explicit: validate-modules' heuristic flags any
+            # argument containing 'token' as potentially secret; this one is a
+            # numeric budget cap, not a credential.
+            "max_tokens": {"type": "int", "default": 8000, "no_log": False},
             "provider": {
                 "type": "str",
                 "choices": ["claude", "anthropic", "openai", "bedrock", "ollama"],
