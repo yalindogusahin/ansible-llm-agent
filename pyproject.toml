@@ -36,4 +36,3 @@ quote-style = "double"
 # write to it on the host.
 exclude_dirs = ["tests", ".venv"]
 skips = ["B404", "B603", "B108"]
-

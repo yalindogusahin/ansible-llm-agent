@@ -21,7 +21,7 @@ galaxy_info:
     - name: Fedora
       versions: [all]
   galaxy_tags:
-    - ansible_ai
+    - ansibleai
     - llm
     - investigation
     - debug

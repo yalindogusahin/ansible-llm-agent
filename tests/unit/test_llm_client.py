@@ -275,7 +275,7 @@ def test_parse_text_action_canonical_shape():
 
 def test_parse_text_action_tolerates_fence_and_prose():
     """Small models often wrap JSON in fences or chat - extract first object."""
-    text = "Sure, here's the call:\n```json\n{\"name\":\"done\",\"input\":{\"summary\":\"ok\",\"reason\":\"r\"}}\n```"
+    text = 'Sure, here\'s the call:\n```json\n{"name":"done","input":{"summary":"ok","reason":"r"}}\n```'
     tcs = lmod._parse_text_action(text)
     assert len(tcs) == 1
     assert tcs[0].name == "done"

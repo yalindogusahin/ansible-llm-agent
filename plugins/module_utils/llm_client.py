@@ -428,9 +428,7 @@ def _to_ollama_text_messages(messages: list[dict[str, Any]]) -> list[dict[str, A
                 text_parts.append(block.get("text", ""))
             elif btype == "tool_use":
                 text_parts.append(
-                    json.dumps(
-                        {"name": block.get("name", ""), "input": block.get("input", {}) or {}}
-                    )
+                    json.dumps({"name": block.get("name", ""), "input": block.get("input", {}) or {}})
                 )
             elif btype == "tool_result":
                 text_parts.append(f"OBSERVATION:\n{block.get('content', '')}")
