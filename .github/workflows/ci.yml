@@ -78,10 +78,42 @@ jobs:
         working-directory: ansible_collections/yalindogusahin/ansible_ai
         run: ansible-test sanity --docker default --skip-test pep8 --skip-test pylint
 
+  integration:
+    name: integration smoke (stub LLM)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          path: ansible_collections/yalindogusahin/ansible_ai
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Install ansible-core
+        run: pip install ansible-core
+      - name: Start scripted-LLM stub
+        working-directory: ansible_collections/yalindogusahin/ansible_ai
+        run: |
+          python tests/integration/stub_llm.py 8765 &
+          for _ in $(seq 1 20); do
+            curl -sf -o /dev/null -X POST http://127.0.0.1:8765 -d '{}' && break
+            sleep 0.5
+          done
+      - name: Run localhost smoke playbook against stub
+        working-directory: ansible_collections/yalindogusahin/ansible_ai
+        env:
+          ANSIBLE_COLLECTIONS_PATH: ${{ github.workspace }}
+          ANTHROPIC_API_KEY: stub
+        run: |
+          ansible-playbook tests/integration/playbook_localhost_smoke.yml \
+            -e provider=claude \
+            -e endpoint=http://127.0.0.1:8765 \
+            -e api_key=stub \
+            -e model=stub-claude
+
   build:
     name: ansible-galaxy build
     runs-on: ubuntu-latest
-    needs: [lint, test, security]
+    needs: [lint, test, security, integration]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0

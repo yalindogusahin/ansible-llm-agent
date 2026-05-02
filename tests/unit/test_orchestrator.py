@@ -235,3 +235,49 @@ def test_run_agent_aggregates_cache_tokens():
     tu = out["tokens_used"]
     assert tu["cache_read"] == 900
     assert tu["cache_write"] == 100
+
+
+def test_run_aggregate_through_ollama_text_json_path():
+    """Aggregate mode under Ollama: model emits {"name":"done","input":{...}}
+    on /api/chat as text content. The OllamaClient text-JSON parser converts
+    it to a ToolCall, run_aggregate extracts the summary, host_count counts
+    the per-host dict. Catches regressions where someone re-enables native
+    tool-use on Ollama and breaks aggregate-mode parsing."""
+    client = lmod.OllamaClient(model="qwen2.5:7b-instruct")
+
+    captured: dict[str, Any] = {}
+
+    def fake_post(url, headers, body):
+        captured["url"] = url
+        captured["body"] = body
+        return {
+            "message": {
+                "content": (
+                    '{"name": "done", "input": '
+                    '{"summary": "cluster-wide DNS regression on 2/3 brokers",'
+                    ' "reason": "matched symptoms"}}'
+                )
+            },
+            "prompt_eval_count": 100,
+            "eval_count": 30,
+            "done_reason": "stop",
+        }
+
+    client._post_json = fake_post
+
+    out = omod.run_aggregate(
+        prompt="cluster-level diagnosis",
+        results={
+            "broker-1": {"diagnosis": "DNS broken on broker-1"},
+            "broker-2": {"diagnosis": "DNS broken on broker-2"},
+            "broker-3": {"diagnosis": "healthy"},
+        },
+        llm_client=client,
+        max_tokens=512,
+    )
+    assert out["diagnosis"] == "cluster-wide DNS regression on 2/3 brokers"
+    assert out["host_count"] == 3
+    # Native tools must NOT be sent for Ollama; schemas are inlined into the
+    # system prompt instead. Regression guard.
+    assert "tools" not in captured["body"]
+    assert "TOOLS (emit ONE JSON object per turn" in captured["body"]["messages"][0]["content"]

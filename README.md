@@ -21,6 +21,22 @@ It is not a config-management module. It is for the situation where you do
 not know the root cause yet and need to look at several heterogeneous nodes
 at once.
 
+## Contents
+
+- [Why](#why)
+- [How it works](#how-it-works)
+- [Permission model](#permission-model)
+- [Providers](#providers)
+- [Layout](#layout)
+- [Install](#install)
+- [Quick start](#quick-start)
+- [`ai_agent` task parameters](#ai_agent-task-parameters)
+- [Examples](#examples)
+- [Returned shape](#returned-shape)
+- [Development](#development)
+- [Status](#status)
+- [License](#license)
+
 ## Why
 
 Declarative ansible breaks down when the question is "why is X failing on
