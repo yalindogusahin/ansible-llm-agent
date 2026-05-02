@@ -73,3 +73,24 @@ releases:
       trivial:
         - "tests/eval/fixtures/ excluded from ansible-lint - those YAMLs are scripted-LLM eval test data, not playbooks."
         - "ruff format applied across plugins/ and tests/."
+
+  0.3.2:
+    release_date: "2026-05-02"
+    changes:
+      release_summary: |
+        Ollama path rewritten to use a text-JSON tool format so small Q4-quantized
+        models (llama3.1:8b, qwen2.5:7b-instruct) actually work end-to-end. Also
+        bundles ansible-test sanity fixes, retry/backoff hardening, and CI/security
+        boilerplate (dependabot, SECURITY.md, sanity ignore file).
+      bugfixes:
+        - "ollama: switch from native /api/chat tool-use to a text-JSON path (tool schemas inlined into the system prompt, single JSON action per turn). Native tool-use was unreliable on Q4-quantized small models served via Ollama - the chat-template parser would silently drop or mangle calls. The text-JSON path restores the v0.2.0 behaviour these models were trained for; capable cloud providers (Claude, OpenAI, Bedrock) keep native tool-use unchanged."
+        - "ai_agent doc sidecar (plugins/modules/ai_agent.py) now initializes AnsibleModule with a real argspec and fail_json's cleanly if reached, so ansible-test sanity validate-modules and import on Python 3.9-3.14 pass."
+        - "ai_agent / ai_exec DOCUMENTATION: add author field. ai_agent: drop no_log from docs (kept on argspec) since DOCUMENTATION schema rejects it."
+      minor_changes:
+        - "llm_client: hardened retry/backoff - full jitter on URLError retries, transient-only retry classification (skip DNS/SSL/connection-refused), strict http(s) scheme enforcement on _post_json."
+        - "README: macOS controllers callout for OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES to avoid CoreFoundation fork-safety crashes in Ansible workers."
+        - "ci: add dependabot config for github_actions, ansible-test sanity step, sanity ignore file (replace-urlopen on llm_client.py because eval harness imports it; missing-gplv3-license on modules because collection is MIT)."
+        - "security: SECURITY.md threat-model documented."
+        - "ci(deps): bump actions/checkout to v6.0.2, actions/setup-python to v6.2.0, actions/upload-artifact, softprops/action-gh-release."
+        - "tests: tests/integration/stub_llm.py added for manual two-turn smoke without an LLM provider."
+        - "roles/ai_agent/meta/main.yml added so the role surfaces conservative default rules through Galaxy metadata."
