@@ -231,9 +231,40 @@ host_count:
 def main():
     """Documentation sidecar; the action plugin handles execution.
 
-    Kept as a no-op so the file is importable in ansible-test sanity. Real
-    invocation is intercepted by plugins/action/ai_agent.py on the controller.
+    Real invocation is intercepted by plugins/action/ai_agent.py on the controller
+    before this module is ever shipped to a target. We still initialize
+    AnsibleModule so ansible-test sanity (validate-modules) sees an argspec
+    consistent with DOCUMENTATION, then fail cleanly if reached.
     """
+    from ansible.module_utils.basic import AnsibleModule
+
+    module = AnsibleModule(
+        argument_spec={
+            "prompt": {"type": "str", "required": True},
+            "rules": {"type": "dict"},
+            "max_iterations": {"type": "int", "default": 5},
+            "max_tokens": {"type": "int", "default": 8000},
+            "provider": {
+                "type": "str",
+                "choices": ["claude", "anthropic", "openai", "bedrock", "ollama"],
+                "default": "claude",
+            },
+            "model": {"type": "str"},
+            "endpoint": {"type": "str"},
+            "api_key": {"type": "str", "no_log": True},
+            "timeout": {"type": "int", "default": 30},
+            "print_result": {"type": "bool", "default": False},
+            "stream": {"type": "bool", "default": False},
+            "aggregate": {"type": "bool", "default": False},
+            "results": {"type": "raw"},
+            "save_transcript": {"type": "str"},
+        },
+        supports_check_mode=False,
+    )
+    module.fail_json(
+        msg="ai_agent must be invoked through its action plugin on the controller; "
+        "bare module execution on a target is not supported."
+    )
 
 
 if __name__ == "__main__":
