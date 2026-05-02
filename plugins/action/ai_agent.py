@@ -28,6 +28,9 @@ from ansible_collections.yalindogusahin.ansible_ai.plugins.module_utils import (
 from ansible_collections.yalindogusahin.ansible_ai.plugins.module_utils import (
     rules as rules_mod,
 )
+from ansible_collections.yalindogusahin.ansible_ai.plugins.module_utils import (
+    tools as tools_mod,
+)
 
 display = Display()
 
@@ -100,7 +103,7 @@ COLLECTION_DEFAULT_RULES: dict[str, Any] = {
         "python": ["socket", "ctypes", "multiprocessing"],
         "read_file": [],
     },
-    "budget": {"max_iterations": 5, "max_tokens": 8000},
+    "budget": dict(rules_mod.DEFAULT_BUDGET),
 }
 
 
@@ -299,7 +302,7 @@ class ActionModule(ActionBase):
                 display.display(f"[ai_agent:{host} step={step}] error: {entry['error']}")
                 return
             action = entry.get("action", "?")
-            if action == "done":
+            if action == tools_mod.DONE:
                 summary = entry.get("summary", "")
                 display.display(f"[ai_agent:{host} step={step}] done: {summary[:200]}")
                 return
@@ -308,15 +311,15 @@ class ActionModule(ActionBase):
                 return
             inp = entry.get("input", {}) or {}
             head = ""
-            if action == "run_cmd":
+            if action == tools_mod.RUN_CMD:
                 argv = inp.get("argv", [])
                 head = "argv=" + " ".join(argv[:6]) + (" ..." if len(argv) > 6 else "")
-            elif action == "read_file":
+            elif action == tools_mod.READ_FILE:
                 head = f"path={inp.get('path', '')}"
-            elif action == "write_file":
+            elif action == tools_mod.WRITE_FILE:
                 content = inp.get("content", "")
                 head = f"path={inp.get('path', '')} bytes={len(content)}"
-            elif action == "run_python":
+            elif action == tools_mod.RUN_PYTHON:
                 head = f"code={len(inp.get('code', ''))}b"
             else:
                 head = ""

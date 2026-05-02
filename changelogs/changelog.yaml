@@ -1,0 +1,75 @@
+---
+ancestor: null
+releases:
+  0.1.0:
+    release_date: "2026-04-30"
+    changes:
+      release_summary: |
+        Initial release. ReAct LLM agent for Ansible with allow/deny rules and
+        bwrap/firejail/nsjail/rlimit sandbox fallback.
+      major_changes:
+        - "ai_agent action plugin - ReAct loop over LLM-generated Python on target hosts."
+        - "ai_exec module - AST-validated, sandboxed execution with bwrap/firejail/nsjail/rlimit fallback."
+      minor_changes:
+        - "Layered allow/deny rule system (collection defaults < group_vars < host_vars < play < task), deny-wins."
+        - "Provider-agnostic LLM client - Claude, OpenAI, Bedrock, Ollama."
+        - "endpoint and api_key task args override env vars."
+        - "Conservative read-only default rules in roles/ai_agent/defaults/main.yml."
+
+  0.1.1:
+    release_date: "2026-04-30"
+    changes:
+      bugfixes:
+        - "Add required authors field to galaxy.yml (Galaxy publish was rejected on 0.1.0)."
+
+  0.1.2:
+    release_date: "2026-04-30"
+    changes:
+      minor_changes:
+        - "print_result task arg on ai_agent prints the diagnosis directly to ansible output, no register + debug boilerplate."
+
+  0.1.3:
+    release_date: "2026-05-01"
+    changes:
+      trivial:
+        - "galaxy.yml repository URL updated to match renamed GitHub repo."
+
+  0.1.4:
+    release_date: "2026-05-01"
+    changes:
+      security_fixes:
+        - "AST validator rejects shell -c <payload> (sh, bash, zsh, dash, ksh, ash, fish, csh, tcsh) even when the shell binary is on the run_cmd allow list, because shell -c defeats the allowlist by passing arbitrary commands as one string. Also rejects shell calls whose argv tail is not statically resolvable."
+      minor_changes:
+        - "tests/integration/playbook_localhost_smoke.yml - localhost-only smoke playbook for end-to-end validation without SSH/inventory."
+
+  0.2.0:
+    release_date: "2026-05-01"
+    changes:
+      minor_changes:
+        - "aggregate task arg switches ai_agent into cluster-aggregation mode (one LLM call synthesizing per-host results). Pair with run_once and delegate_to localhost."
+        - "results task arg supplies per-host inputs in aggregate mode (dict or list)."
+        - "prompts.build_aggregate_prompt helper; new return fields aggregate and host_count in aggregate mode."
+
+  0.2.1:
+    release_date: "2026-05-01"
+    changes:
+      bugfixes:
+        - "_parse_openai_response no longer crashes when usage.prompt_tokens_details is null (vLLM emits this)."
+
+  0.3.0:
+    release_date: "2026-05-01"
+    changes:
+      minor_changes:
+        - "save_transcript task arg writes a JSON artifact (prompt, rules, transcript, diagnosis, tokens, provider, model). The literal {host} is substituted with inventory_hostname. Write failures are non-fatal."
+        - "LLMClient._post_json retries up to max_retries (default 3) on URLError and HTTP 408/425/429/500/502/503/504 with exponential backoff (0.5/1/2/4s + jitter). 4xx auth/validation errors are not retried. New max_retries arg on LLMClient and get_client; set 0 to disable."
+        - "Orchestrator validates LLM tool calls before dispatch. Unknown names or malformed inputs are rejected with a tool_result is_error so the model can self-correct. Two consecutive iterations of only-malformed calls aborts the loop."
+        - "High-level architecture diagram in the README."
+
+  0.3.1:
+    release_date: "2026-05-01"
+    changes:
+      bugfixes:
+        - "ai_agent DOCUMENTATION had an unquoted YAML scalar with embedded colons that broke ansible-doc and ansible-lint args[module]. Wrapped the bullet in quotes."
+      trivial:
+        - "tests/eval/fixtures/ excluded from ansible-lint - those YAMLs are scripted-LLM eval test data, not playbooks."
+        - "ruff format applied across plugins/ and tests/."

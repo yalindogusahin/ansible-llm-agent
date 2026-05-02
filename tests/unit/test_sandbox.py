@@ -139,3 +139,40 @@ def test_validate_ast_rejects_bash_with_non_literal_tail():
 
 def test_shell_binaries_set_covers_common_shells():
     assert {"sh", "bash", "zsh", "dash"}.issubset(smod.SHELL_BINARIES)
+
+
+def test_run_capped_returns_stdout_for_small_output():
+    res = smod._run_capped(["/bin/echo", "hello world"], timeout=5)
+    assert res.exit == 0
+    assert res.timed_out is False
+    assert "hello world" in res.stdout
+    assert res.stderr == ""
+
+
+def test_run_capped_truncates_oversized_stdout():
+    cap = 1024
+    res = smod._run_capped(
+        ["/bin/sh", "-c", "yes hi | head -c 10000"],
+        timeout=10,
+        cap=cap,
+    )
+    assert res.exit == 0
+    assert "[truncated at" in res.stdout
+    # stdout = capped bytes + truncation marker; strict but bounded.
+    assert len(res.stdout.encode("utf-8")) <= cap + 64
+
+
+def test_run_capped_marks_timeout_and_kills_process():
+    res = smod._run_capped(["/bin/sleep", "10"], timeout=1)
+    assert res.timed_out is True
+    assert res.exit == 124
+
+
+def test_run_capped_captures_stderr_separately():
+    res = smod._run_capped(
+        ["/bin/sh", "-c", "echo out; echo err 1>&2"],
+        timeout=5,
+    )
+    assert res.exit == 0
+    assert "out" in res.stdout
+    assert "err" in res.stderr

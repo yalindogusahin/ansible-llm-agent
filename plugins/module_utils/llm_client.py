@@ -19,6 +19,9 @@ from __future__ import annotations
 import json
 import os
 import random
+import re
+import socket
+import ssl
 import time
 import urllib.error
 import urllib.request
@@ -31,10 +34,25 @@ from typing import Any
 _RETRYABLE_HTTP_CODES = frozenset({408, 425, 429, 500, 502, 503, 504})
 
 
+def _url_error_is_transient(reason: Any) -> bool:
+    """Decide whether a URLError reason is worth retrying.
+
+    DNS failure, SSL verification failure, and connection refused are
+    permanent within the retry window - retrying just delays the failure.
+    Timeouts and resets can recover.
+    """
+    return not isinstance(reason, socket.gaierror | ssl.SSLError | ConnectionRefusedError)
+
+
 def _backoff_delay(attempt: int) -> float:
-    """Exponential backoff with jitter. attempt is 0-indexed."""
+    """Exponential backoff with full jitter. attempt is 0-indexed.
+
+    Full jitter (uniform [0, base]) decorrelates concurrent retries against a
+    shared rate limit; partial jitter still aligns under thundering-herd 429s.
+    """
     base = 0.5 * (2**attempt)  # 0.5, 1, 2, 4
-    return base + random.uniform(0, base * 0.25)
+    # backoff jitter, not security-sensitive
+    return random.uniform(0, base)  # nosec B311
 
 
 DEFAULT_MODELS = {
@@ -96,11 +114,14 @@ class LLMClient(ABC):
     ) -> Completion: ...
 
     def _post_json(self, url: str, headers: dict[str, str], body: dict[str, Any]) -> dict[str, Any]:
+        if not url.startswith(("http://", "https://")):
+            raise LLMError(f"{self.name}: refusing non-http(s) endpoint: {url!r}")
         data = json.dumps(body).encode("utf-8")
         for attempt in range(self.max_retries + 1):
             req = urllib.request.Request(url, data=data, headers=headers, method="POST")
             try:
-                with urllib.request.urlopen(req, timeout=self.timeout) as resp:
+                # scheme is enforced above to http(s)
+                with urllib.request.urlopen(req, timeout=self.timeout) as resp:  # nosec B310
                     return json.loads(resp.read().decode("utf-8"))
             except urllib.error.HTTPError as e:
                 if e.code in _RETRYABLE_HTTP_CODES and attempt < self.max_retries:
@@ -109,12 +130,11 @@ class LLMClient(ABC):
                 detail = e.read().decode("utf-8", "replace")
                 raise LLMError(f"{self.name} HTTP {e.code}: {detail[:500]}") from e
             except urllib.error.URLError as e:
-                if attempt < self.max_retries:
+                if _url_error_is_transient(e.reason) and attempt < self.max_retries:
                     time.sleep(_backoff_delay(attempt))
                     continue
                 raise LLMError(f"{self.name} URL error: {e.reason}") from e
-        # Loop exits only via return or raise; this is unreachable.
-        raise LLMError(f"{self.name}: retry loop exhausted unexpectedly")
+        raise AssertionError("unreachable: retry loop always returns or raises")
 
 
 # Anthropic / Bedrock --------------------------------------------------------
@@ -363,17 +383,35 @@ class OpenAIClient(LLMClient):
 
 
 # Ollama ---------------------------------------------------------------------
+#
+# Ollama-served models go through a text-JSON path rather than native tool-use.
+# Q4-quantized small models (qwen2.5:7b, llama3.1:8b) emit native tool_calls
+# unreliably - the chat-template renderer can drop or mangle the call so the
+# orchestrator sees an empty message. The v0.2.0 architecture (tools described
+# in the system prompt, model emits a single JSON object per turn) is what
+# these models handle reliably, so OllamaClient inlines the tool schemas into
+# the system prompt and parses one JSON action per response.
 
 
-def _to_ollama_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    """Translate Anthropic-style content blocks into Ollama chat messages.
+def _render_tools_for_text_prompt(tools: list[dict[str, Any]]) -> str:
+    """Render tool definitions as text appended to the system prompt."""
+    lines = ["", "TOOLS (emit ONE JSON object per turn, nothing else):"]
+    for t in tools:
+        schema = json.dumps(t["input_schema"], separators=(",", ":"))
+        lines.append(f"  - {t['name']}: {t['description']}")
+        lines.append(f"    schema: {schema}")
+    lines.append("")
+    lines.append('Format: {"name": "<tool_name>", "input": {<arguments>}}')
+    lines.append("Output only the JSON object on a single line. No markdown fences. No commentary.")
+    return "\n".join(lines)
 
-    Ollama's /api/chat looks OpenAI-shaped but diverges in two places that
-    matter for multi-turn tool use:
-      - tool_calls[].function.arguments is a *dict*, not a JSON-encoded string
-      - tool result messages have no tool_call_id (results are bound positionally)
-    Sending OpenAI-shape arguments-as-string trips Ollama's JSON parser
-    ('Value looks like object, but can't find closing }').
+
+def _to_ollama_text_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Render Anthropic-shape content blocks as plain text turns for text-JSON mode.
+
+    - prior assistant tool_use blocks become the JSON action line they were
+    - prior user tool_result blocks become "OBSERVATION:\\n<content>"
+    - text blocks pass through
     """
     out: list[dict[str, Any]] = []
     for msg in messages:
@@ -382,39 +420,64 @@ def _to_ollama_messages(messages: list[dict[str, Any]]) -> list[dict[str, Any]]:
         if isinstance(content, str):
             out.append({"role": role, "content": content})
             continue
-
         blocks = content or []
-        if role == "user":
-            texts: list[str] = []
-            for block in blocks:
-                btype = block.get("type")
-                if btype == "tool_result":
-                    out.append({"role": "tool", "content": str(block.get("content", ""))})
-                elif btype == "text":
-                    texts.append(block.get("text", ""))
-            if texts:
-                out.append({"role": "user", "content": "\n".join(texts)})
-        elif role == "assistant":
-            texts = []
-            tool_calls: list[dict[str, Any]] = []
-            for block in blocks:
-                btype = block.get("type")
-                if btype == "text":
-                    texts.append(block.get("text", ""))
-                elif btype == "tool_use":
-                    tool_calls.append(
-                        {
-                            "function": {
-                                "name": block.get("name", ""),
-                                "arguments": block.get("input", {}) or {},
-                            }
-                        }
+        text_parts: list[str] = []
+        for block in blocks:
+            btype = block.get("type")
+            if btype == "text":
+                text_parts.append(block.get("text", ""))
+            elif btype == "tool_use":
+                text_parts.append(
+                    json.dumps(
+                        {"name": block.get("name", ""), "input": block.get("input", {}) or {}}
                     )
-            entry: dict[str, Any] = {"role": "assistant", "content": "\n".join(texts)}
-            if tool_calls:
-                entry["tool_calls"] = tool_calls
-            out.append(entry)
+                )
+            elif btype == "tool_result":
+                text_parts.append(f"OBSERVATION:\n{block.get('content', '')}")
+        if text_parts:
+            out.append({"role": role, "content": "\n".join(text_parts)})
     return out
+
+
+_FENCE_RE = re.compile(r"^```(?:json)?\s*|\s*```$", re.MULTILINE)
+_JSON_OBJ_RE = re.compile(r"\{.*\}", re.DOTALL)
+
+
+def _parse_text_action(text: str) -> list[ToolCall]:
+    """Extract one tool call from a model's free-text response.
+
+    Tolerates a single ```json``` fence and surrounding prose. Accepts the
+    canonical `{"name": ..., "input": {...}}` shape and the common variants
+    small models emit (`action`/`tool` for the name, `parameters`/`arguments`
+    for the input). Returns an empty list when nothing parseable is found.
+    """
+    if not text or not text.strip():
+        return []
+    cleaned = _FENCE_RE.sub("", text).strip()
+    obj: Any
+    try:
+        obj = json.loads(cleaned)
+    except json.JSONDecodeError:
+        m = _JSON_OBJ_RE.search(cleaned)
+        if not m:
+            return []
+        try:
+            obj = json.loads(m.group(0))
+        except json.JSONDecodeError:
+            return []
+    if not isinstance(obj, dict):
+        return []
+    name = obj.get("name") or obj.get("action") or obj.get("tool")
+    inp = obj.get("input")
+    if inp is None:
+        inp = obj.get("parameters")
+    if inp is None:
+        inp = obj.get("arguments")
+    if inp is None:
+        inp = {}
+    if not isinstance(name, str) or not name or not isinstance(inp, dict):
+        return []
+    return [ToolCall(id=f"call_{name}", name=name, input=inp)]
 
 
 class OllamaClient(LLMClient):
@@ -424,38 +487,22 @@ class OllamaClient(LLMClient):
         base = self.endpoint or os.environ.get("OLLAMA_URL", "http://127.0.0.1:11434")
         url = base.rstrip("/") + "/api/chat"
         headers = {"content-type": "application/json"}
-        ol_messages = [{"role": "system", "content": system}] + _to_ollama_messages(messages)
+        sys_text = system + (_render_tools_for_text_prompt(tools) if tools else "")
+        ol_messages = [{"role": "system", "content": sys_text}] + _to_ollama_text_messages(messages)
         body: dict[str, Any] = {
             "model": self.model,
             "stream": False,
             "messages": ol_messages,
             "options": {"num_predict": max_tokens},
         }
-        if tools:
-            body["tools"] = _to_openai_tools(tools)
         resp = self._post_json(url, headers, body)
         msg = resp.get("message", {}) or {}
         text = msg.get("content", "") or ""
-        tool_calls: list[ToolCall] = []
-        for tc in msg.get("tool_calls", []) or []:
-            fn = tc.get("function", {}) or {}
-            args = fn.get("arguments")
-            if isinstance(args, str):
-                try:
-                    args = json.loads(args)
-                except json.JSONDecodeError:
-                    args = {}
-            elif not isinstance(args, dict):
-                args = {}
-            tool_calls.append(
-                ToolCall(
-                    id=tc.get("id", "") or fn.get("name", ""),
-                    name=fn.get("name", ""),
-                    input=args,
-                )
-            )
+        tool_calls = _parse_text_action(text)
+        # Suppress raw text when a tool call was parsed so the orchestrator
+        # doesn't double-count the JSON line as both action and diagnosis.
         return Completion(
-            text=text,
+            text="" if tool_calls else text,
             tool_calls=tool_calls,
             input_tokens=resp.get("prompt_eval_count", 0),
             output_tokens=resp.get("eval_count", 0),

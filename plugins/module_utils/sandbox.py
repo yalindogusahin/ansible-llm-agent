@@ -23,11 +23,13 @@ from __future__ import annotations
 
 import ast
 import contextlib
+import functools
 import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import threading
 from dataclasses import dataclass
 from typing import Any
 
@@ -214,7 +216,7 @@ def validate_ast(code: str, rules: dict[str, Any]) -> None:
                             f"shell '{argv0_base}' with non-literal arguments not allowed",
                             where=f"line {node.lineno}",
                         )
-                    if any(t == "-c" or t.startswith("-c") for t in tail):
+                    if any(t.startswith("-c") for t in tail):
                         raise SandboxViolation(
                             f"shell '{argv0_base}' with `-c` not allowed (defeats run_cmd allowlist)",
                             where=f"line {node.lineno}",
@@ -229,11 +231,14 @@ def _probe(cmd: list[str]) -> bool:
         return False
 
 
+@functools.lru_cache(maxsize=1)
 def detect_isolation() -> str:
     """Detect strongest *working* isolation tool.
 
     Mere presence on PATH is not enough: AppArmor/userns restrictions can
-    make bwrap installable but unusable. Probe before committing.
+    make bwrap installable but unusable. Probe before committing. Result is
+    cached for the process lifetime - the available isolation backend cannot
+    change between tool calls and each probe spawns a subprocess.
     """
     if shutil.which("bwrap") and _probe(["bwrap", "--bind", "/", "/", "--", "true"]):
         return "bwrap"
@@ -316,6 +321,75 @@ def _wrap(argv: list[str], rules: dict[str, Any], extra_ro_paths: list[str] | No
     return argv
 
 
+# Cap captured stdout/stderr to bound controller memory: an allow-listed but
+# noisy command (e.g. journalctl without --lines) could otherwise stream
+# unbounded output into a single Python string before timeout fires.
+CAPTURE_CAP_BYTES = 1024 * 1024  # 1 MB per stream
+
+
+def _drain(stream: Any, buf: bytearray, cap: int, truncated: list[bool]) -> None:
+    """Read stream in 4 KB chunks into buf up to cap; keep draining after cap.
+
+    Continuing to read past the cap (without storing) prevents the writer from
+    blocking on a full pipe and lets the process exit cleanly.
+    """
+    try:
+        while True:
+            chunk = stream.read(4096)
+            if not chunk:
+                return
+            room = cap - len(buf)
+            if room > 0:
+                buf.extend(chunk[:room])
+                if len(buf) >= cap:
+                    truncated[0] = True
+            else:
+                truncated[0] = True
+    finally:
+        with contextlib.suppress(Exception):
+            stream.close()
+
+
+def _decode_capped(buf: bytearray, truncated: bool, cap: int) -> str:
+    text = bytes(buf).decode("utf-8", "replace")
+    if truncated:
+        text += f"\n... [truncated at {cap} bytes]"
+    return text
+
+
+def _run_capped(cmd: list[str], timeout: int, cap: int = CAPTURE_CAP_BYTES) -> SandboxResult:
+    """Run cmd and capture stdout/stderr up to cap bytes per stream."""
+    proc = subprocess.Popen(cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    out_buf = bytearray()
+    err_buf = bytearray()
+    out_trunc = [False]
+    err_trunc = [False]
+    t_out = threading.Thread(target=_drain, args=(proc.stdout, out_buf, cap, out_trunc), daemon=True)
+    t_err = threading.Thread(target=_drain, args=(proc.stderr, err_buf, cap, err_trunc), daemon=True)
+    t_out.start()
+    t_err.start()
+    try:
+        rc = proc.wait(timeout=timeout)
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        rc = proc.wait()
+        t_out.join()
+        t_err.join()
+        return SandboxResult(
+            stdout=_decode_capped(out_buf, out_trunc[0], cap),
+            stderr=_decode_capped(err_buf, err_trunc[0], cap),
+            exit=124,
+            timed_out=True,
+        )
+    t_out.join()
+    t_err.join()
+    return SandboxResult(
+        stdout=_decode_capped(out_buf, out_trunc[0], cap),
+        stderr=_decode_capped(err_buf, err_trunc[0], cap),
+        exit=rc,
+    )
+
+
 def run_cmd(argv: list[str], rules: dict[str, Any], timeout: int = 30) -> SandboxResult:
     """Run an allow-listed argv inside the strongest available sandbox.
 
@@ -324,20 +398,9 @@ def run_cmd(argv: list[str], rules: dict[str, Any], timeout: int = 30) -> Sandbo
     """
     cmd = _wrap(argv, rules)
     try:
-        proc = subprocess.run(
-            cmd,
-            capture_output=True,
-            text=True,
-            timeout=timeout,
-            check=False,
-        )
-    except subprocess.TimeoutExpired as e:
-        stdout = e.stdout if isinstance(e.stdout, str) else (e.stdout or b"").decode("utf-8", "replace")
-        stderr = e.stderr if isinstance(e.stderr, str) else (e.stderr or b"").decode("utf-8", "replace")
-        return SandboxResult(stdout=stdout, stderr=stderr, exit=124, timed_out=True)
+        return _run_capped(cmd, timeout=timeout)
     except FileNotFoundError as e:
         return SandboxResult(stdout="", stderr=f"executable not found: {e}", exit=127)
-    return SandboxResult(stdout=proc.stdout, stderr=proc.stderr, exit=proc.returncode)
 
 
 def run_python(code: str, rules: dict[str, Any], timeout: int = 30) -> SandboxResult:
@@ -351,19 +414,7 @@ def run_python(code: str, rules: dict[str, Any], timeout: int = 30) -> SandboxRe
 
     try:
         cmd = _wrap([sys.executable, script_path], rules, extra_ro_paths=[script_path])
-        try:
-            proc = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=timeout,
-                check=False,
-            )
-        except subprocess.TimeoutExpired as e:
-            stdout = e.stdout if isinstance(e.stdout, str) else (e.stdout or b"").decode("utf-8", "replace")
-            stderr = e.stderr if isinstance(e.stderr, str) else (e.stderr or b"").decode("utf-8", "replace")
-            return SandboxResult(stdout=stdout, stderr=stderr, exit=124, timed_out=True)
-        return SandboxResult(stdout=proc.stdout, stderr=proc.stderr, exit=proc.returncode)
+        return _run_capped(cmd, timeout=timeout)
     finally:
         with contextlib.suppress(OSError):
             os.unlink(script_path)

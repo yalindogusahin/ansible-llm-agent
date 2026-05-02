@@ -228,10 +228,9 @@ def test_to_openai_messages_empty_assistant_falls_back_to_empty_content():
     assert out == [{"role": "assistant", "content": ""}]
 
 
-def test_to_ollama_messages_keeps_arguments_as_dict():
-    """Regression: Ollama's chat API treats tool_calls[].function.arguments as
-    a dict, not a JSON-encoded string. Sending a string trips its parser
-    ('Value looks like object, but can't find closing }')."""
+def test_ollama_text_messages_render_prior_tool_use_as_json_line():
+    """In text-JSON mode, an assistant tool_use becomes the JSON action line
+    the model previously emitted - so the next turn sees its own action verbatim."""
     msgs = [
         {
             "role": "assistant",
@@ -245,25 +244,54 @@ def test_to_ollama_messages_keeps_arguments_as_dict():
             ],
         }
     ]
-    out = lmod._to_ollama_messages(msgs)
+    out = lmod._to_ollama_text_messages(msgs)
     assert len(out) == 1
-    args = out[0]["tool_calls"][0]["function"]["arguments"]
-    assert isinstance(args, dict)
-    assert args == {"argv": ["uname", "-r"], "reason": "x"}
+    assert out[0]["role"] == "assistant"
+    parsed = json.loads(out[0]["content"])
+    assert parsed == {"name": "run_cmd", "input": {"argv": ["uname", "-r"], "reason": "x"}}
 
 
-def test_to_ollama_messages_tool_result_has_no_tool_call_id():
-    """Ollama binds tool results positionally; tool_call_id is not part of its schema."""
+def test_ollama_text_messages_render_tool_result_as_observation():
+    """A user tool_result becomes an OBSERVATION user turn - small models do
+    not have a `tool` role in their template, so we fold results into user turns."""
     msgs = [
         {
             "role": "user",
             "content": [
-                {"type": "tool_result", "tool_use_id": "t1", "content": "exit=0"},
+                {"type": "tool_result", "tool_use_id": "t1", "content": "exit=0\nSTDOUT:\n5.15.0"},
             ],
         }
     ]
-    out = lmod._to_ollama_messages(msgs)
-    assert out == [{"role": "tool", "content": "exit=0"}]
+    out = lmod._to_ollama_text_messages(msgs)
+    assert out == [{"role": "user", "content": "OBSERVATION:\nexit=0\nSTDOUT:\n5.15.0"}]
+
+
+def test_parse_text_action_canonical_shape():
+    tcs = lmod._parse_text_action('{"name": "run_cmd", "input": {"argv": ["uname"], "reason": "x"}}')
+    assert len(tcs) == 1
+    assert tcs[0].name == "run_cmd"
+    assert tcs[0].input == {"argv": ["uname"], "reason": "x"}
+
+
+def test_parse_text_action_tolerates_fence_and_prose():
+    """Small models often wrap JSON in fences or chat - extract first object."""
+    text = "Sure, here's the call:\n```json\n{\"name\":\"done\",\"input\":{\"summary\":\"ok\",\"reason\":\"r\"}}\n```"
+    tcs = lmod._parse_text_action(text)
+    assert len(tcs) == 1
+    assert tcs[0].name == "done"
+
+
+def test_parse_text_action_accepts_parameters_alias():
+    """llama3.1 emits `parameters` instead of `input`; accept both."""
+    tcs = lmod._parse_text_action('{"name": "run_cmd", "parameters": {"argv": ["uname"]}}')
+    assert len(tcs) == 1
+    assert tcs[0].input == {"argv": ["uname"]}
+
+
+def test_parse_text_action_returns_empty_on_garbage():
+    assert lmod._parse_text_action("") == []
+    assert lmod._parse_text_action("no json here, just words") == []
+    assert lmod._parse_text_action('{"missing_name": true}') == []
 
 
 def test_to_openai_tools_wraps_in_function_envelope():

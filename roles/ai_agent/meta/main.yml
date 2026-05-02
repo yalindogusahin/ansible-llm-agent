@@ -1,0 +1,29 @@
+---
+# This role exists only to surface the conservative default rules in
+# defaults/main.yml as `ansible_ai_rules`. The action plugin already bakes
+# the same defaults in; including the role makes the operator's allow/deny
+# baseline visible in inventory rather than hidden in plugin code.
+
+galaxy_info:
+  role_name: ai_agent
+  namespace: yalindogusahin
+  author: yalindogusahin
+  description: Conservative ansible_ai default rules surfaced as inventory vars.
+  license: MIT
+  min_ansible_version: "2.15"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Debian
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: Fedora
+      versions: [all]
+  galaxy_tags:
+    - ansible_ai
+    - llm
+    - investigation
+    - debug
+
+dependencies: []

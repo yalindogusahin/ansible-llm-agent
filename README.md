@@ -1,5 +1,11 @@
 # ansible_ai
 
+[![CI](https://github.com/yalindogusahin/ansible-ai-agent/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/yalindogusahin/ansible-ai-agent/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+[![Ansible Galaxy](https://img.shields.io/badge/galaxy-yalindogusahin.ansible__ai-660198.svg)](https://galaxy.ansible.com/ui/repo/published/yalindogusahin/ansible_ai/)
+[![ansible-core](https://img.shields.io/badge/ansible--core-%E2%89%A52.15-blue.svg)](https://docs.ansible.com/ansible-core/devel/)
+[![Python](https://img.shields.io/badge/python-3.10%20%7C%203.11%20%7C%203.12-blue.svg)](pyproject.toml)
+
 LLM-driven cross-host investigation agent for Ansible.
 
 `ai_agent` is an action plugin that takes a natural-language prompt and
@@ -210,6 +216,15 @@ ansible-galaxy collection install yalindogusahin-ansible_ai-*.tar.gz
 `print_result: true` writes the diagnosis directly to ansible output. Drop
 it (or set false) and `register: r` + `r.diagnosis` if you want the result
 in a variable instead.
+
+> **macOS controllers:** export `OBJC_DISABLE_INITIALIZE_FORK_SAFETY=YES`
+> before running `ansible-playbook`, or workers crash with
+> `+[__NSCFConstantString initialize] may have been in progress in another
+> thread when fork() was called`. This is a generic ansible-on-macOS issue
+> (CoreFoundation is not fork-safe), not specific to this collection, and
+> cannot be patched from inside a collection because the crash occurs
+> before any collection code is loaded in the worker. Linux controllers
+> are unaffected.
 
 ## `ai_agent` task parameters
 

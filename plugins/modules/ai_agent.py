@@ -67,6 +67,7 @@ options:
     description: Provider API key. Overrides env (ANTHROPIC_API_KEY, OPENAI_API_KEY, ANTHROPIC_AUTH_TOKEN). Prefer env or vault for secrets.
     type: str
     required: false
+    no_log: true
   timeout:
     description: Per-snippet execution timeout (seconds) on the target host.
     type: int
@@ -203,7 +204,7 @@ iterations_used:
   returned: always
   type: int
 tokens_used:
-  description: "Token accounting per host. {input: int, output: int}."
+  description: "Token accounting per host. Keys - input, output, cache_read, cache_write (cache_read/cache_write are 0 on providers that do not report prompt-cache usage)."
   returned: always
   type: dict
 rules_effective:

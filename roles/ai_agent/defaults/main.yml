@@ -29,6 +29,7 @@ ansible_ai_rules:
       - head
       - tail
       - openssl
+      - curl
       - dig
       - nslookup
       - tracepath

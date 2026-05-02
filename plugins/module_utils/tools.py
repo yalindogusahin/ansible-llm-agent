@@ -142,28 +142,31 @@ def build_tools(rules: dict[str, Any]) -> list[dict[str, Any]]:
             }
         )
 
-    tools.append(
-        {
-            "name": DONE,
-            "description": (
-                "Conclude the investigation. Provide a final summary and stop. "
-                "Emit this once you have a diagnosis or after evidence is exhausted."
-            ),
-            "input_schema": {
-                "type": "object",
-                "properties": {
-                    "summary": {
-                        "type": "string",
-                        "description": "Human-readable diagnosis.",
-                    },
-                    "reason": {"type": "string"},
-                },
-                "required": ["summary", "reason"],
-            },
-        }
-    )
+    tools.append(done_tool())
 
     return tools
+
+
+def done_tool() -> dict[str, Any]:
+    """Return the `done` tool schema. Always available, no rules-gating."""
+    return {
+        "name": DONE,
+        "description": (
+            "Conclude the investigation. Provide a final summary and stop. "
+            "Emit this once you have a diagnosis or after evidence is exhausted."
+        ),
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "summary": {
+                    "type": "string",
+                    "description": "Human-readable diagnosis.",
+                },
+                "reason": {"type": "string"},
+            },
+            "required": ["summary", "reason"],
+        },
+    }
 
 
 # Path patterns that always block reads of credential-bearing files even when
@@ -195,7 +198,7 @@ def _argv_validate(argv: list[str], rules: dict[str, Any]) -> str | None:
         return f"command not allowed: {base}"
     if base in sandbox_mod.SHELL_BINARIES:
         for tok in argv[1:]:
-            if tok == "-c" or tok.startswith("-c"):
+            if tok.startswith("-c"):
                 return f"shell '{base}' with -c is not allowed (defeats run_cmd allowlist)"
     return None
 

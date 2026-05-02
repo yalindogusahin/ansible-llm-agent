@@ -1,3 +1,10 @@
+[project]
+name = "ansible-ai-agent"
+# This project ships as an Ansible collection (see galaxy.yml for the
+# distributable version); the pyproject lives only to anchor tool config.
+version = "0.0.0"
+requires-python = ">=3.10"
+
 [tool.ruff]
 line-length = 110
 target-version = "py310"
@@ -20,3 +27,13 @@ ignore = [
 
 [tool.ruff.format]
 quote-style = "double"
+
+[tool.bandit]
+# subprocess use is intentional and allow-listed at the rules layer; the
+# sandbox module is the trusted boundary. assert_used trips on test files
+# only, which we exclude. B108 (hardcoded /tmp) is a false positive for
+# bwrap argv construction: we pass "/tmp" as a mount-namespace path, never
+# write to it on the host.
+exclude_dirs = ["tests", ".venv"]
+skips = ["B404", "B603", "B108"]
+

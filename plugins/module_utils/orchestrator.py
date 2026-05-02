@@ -127,6 +127,12 @@ def run_agent(
     max_tokens = rules["budget"]["max_tokens"]
 
     for iterations in range(1, max_iter + 1):
+        if total_input + total_output >= max_tokens:
+            entry = {"step": iterations, "error": "token budget exceeded"}
+            transcript.append(entry)
+            _emit(entry)
+            diagnosis = "stopped: token budget exceeded"
+            break
         try:
             completion = llm_client.complete(system, messages, tools, max_tokens=1024)
         except llm_mod.LLMError as e:
@@ -182,8 +188,6 @@ def run_agent(
         for tc in completion.tool_calls:
             err = _validate_tool_call(tc.name, tc.input or {}, allowed_names)
             if err is not None:
-                # Malformed call - tell the model exactly what was wrong via
-                # tool_result and let it self-correct on the next turn.
                 tool_results.append(
                     {
                         "type": "tool_result",
@@ -293,13 +297,8 @@ def run_aggregate(
 ) -> dict[str, Any]:
     """Single-shot cluster aggregation. One LLM call, only the `done` tool."""
     system = prompts_mod.build_aggregate_prompt(prompt, results)
-    done_tool = [
-        t
-        for t in tools_mod.build_tools({"allow": {}, "deny": {}, "budget": {}})
-        if t["name"] == tools_mod.DONE
-    ]
     messages = [{"role": "user", "content": "Emit your cluster-level summary now."}]
-    completion = llm_client.complete(system, messages, done_tool, max_tokens=max_tokens)
+    completion = llm_client.complete(system, messages, [tools_mod.done_tool()], max_tokens=max_tokens)
 
     summary: str | None = None
     for tc in completion.tool_calls:

@@ -8,6 +8,8 @@ rules:
   document-start: disable
   truthy:
     allowed-values: ["true", "false", "yes", "no"]
+    # GitHub Actions workflows use `on:` as a trigger key, not a boolean.
+    check-keys: false
   comments:
     min-spaces-from-content: 1
   comments-indentation: disable
@@ -21,3 +23,4 @@ ignore: |
   .git/
   .venv/
   __pycache__/
+  tests/eval/fixtures/
