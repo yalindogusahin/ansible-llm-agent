@@ -1,0 +1,3 @@
+plugins/module_utils/llm_client.py replace-urlopen
+plugins/modules/ai_agent.py validate-modules:missing-gplv3-license
+plugins/modules/ai_exec.py validate-modules:missing-gplv3-license

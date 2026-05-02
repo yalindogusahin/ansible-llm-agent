@@ -7,6 +7,8 @@ DOCUMENTATION = r"""
 ---
 module: ai_exec
 short_description: Run one LLM-issued tool call inside the ansible_ai sandbox
+author:
+  - Yalın Şahin (@yalindogusahin)
 description:
   - Receives a single tool call (run_cmd, read_file, write_file, or run_python)
     from the ai_agent action plugin, validates it against the merged rule set,

@@ -12,6 +12,8 @@ DOCUMENTATION = r"""
 ---
 module: ai_agent
 short_description: LLM-driven ReAct investigation agent for Ansible
+author:
+  - Yalın Şahin (@yalindogusahin)
 description:
   - Takes a natural-language prompt and runs a tool-use loop against a target
     host. Each iteration the LLM picks one tool call (run_cmd, read_file,
@@ -64,10 +66,9 @@ options:
     type: str
     required: false
   api_key:
-    description: Provider API key. Overrides env (ANTHROPIC_API_KEY, OPENAI_API_KEY, ANTHROPIC_AUTH_TOKEN). Prefer env or vault for secrets.
+    description: Provider API key. Overrides env (ANTHROPIC_API_KEY, OPENAI_API_KEY, ANTHROPIC_AUTH_TOKEN). Prefer env or vault for secrets. Marked no_log in the action plugin's argspec so it never appears in ansible logs.
     type: str
     required: false
-    no_log: true
   timeout:
     description: Per-snippet execution timeout (seconds) on the target host.
     type: int
@@ -228,12 +229,11 @@ host_count:
 
 
 def main():
-    """Documentation sidecar; never executed.
+    """Documentation sidecar; the action plugin handles execution.
 
-    The action plugin in plugins/action/ai_agent.py runs on the controller
-    and intercepts the task before it ships to a target.
+    Kept as a no-op so the file is importable in ansible-test sanity. Real
+    invocation is intercepted by plugins/action/ai_agent.py on the controller.
     """
-    raise NotImplementedError("ai_agent is an action plugin; this module file exists only for ansible-doc")
 
 
 if __name__ == "__main__":

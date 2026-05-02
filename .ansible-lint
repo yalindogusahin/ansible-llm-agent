@@ -1,8 +1,13 @@
 ---
 # ansible_ai_rules is intentionally a top-level (global) variable, not a role-scoped one,
 # so the no-role-prefix rule does not apply.
+#
+# replace-urlopen is allow-listed in tests/sanity/ignore-*.txt because llm_client.py
+# is also imported by the eval harness (tests/eval) and must not depend on
+# ansible.module_utils.urls.open_url (which requires an AnsibleModule context).
 skip_list:
   - var-naming[no-role-prefix]
+  - sanity[cannot-ignore]
 
 exclude_paths:
   - .git/
