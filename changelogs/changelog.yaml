@@ -104,3 +104,20 @@ releases:
         to Galaxy because of this and a missing publish secret.
       bugfixes:
         - "roles/ai_agent: add README.md so Galaxy import does not reject the role with 'No role readme found'."
+
+  0.3.4:
+    release_date: "2026-05-05"
+    changes:
+      release_summary: |
+        Code-review follow-up. Tightens the rule layer against `..`-laden path
+        traversal, hardens the OpenAI parser against empty `choices` arrays
+        (vLLM filter/quota events), and makes BedrockClient actually honor the
+        configured timeout. Adds Galaxy `issues`/`documentation` URLs and a few
+        more `build_ignore` entries to keep packaged artifacts clean.
+      security_fixes:
+        - "rules.is_path_allowed normalizes the candidate path with posixpath.normpath before fnmatch, so `/var/log/../../etc/shadow` no longer slips past a narrower allow pattern such as `/var/log/**`."
+      bugfixes:
+        - "llm_client._parse_openai_response no longer KeyErrors when the response carries an empty or missing `choices` array (vLLM and OpenAI-compatible servers can return this on filter/quota events)."
+        - "llm_client.BedrockClient now threads self.timeout through botocore Config (connect_timeout/read_timeout) so invoke_model actually honors the LLMClient timeout instead of inheriting boto3's default."
+      minor_changes:
+        - "galaxy.yml: add `issues` and `documentation` URLs and extend `build_ignore` (`*.tar.gz`, `.claude`, `.pytest_cache`, `.ruff_cache`) so packaged artifacts stay clean."
