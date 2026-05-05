@@ -9,6 +9,7 @@ from __future__ import annotations
 
 import copy
 import fnmatch
+import posixpath
 from typing import Any
 
 PRIMITIVE_KEYS = ("run_cmd", "read_file", "write_file", "python")
@@ -117,12 +118,18 @@ def is_cmd_allowed(rules: dict[str, Any], cmd: str) -> bool:
 
 
 def is_path_allowed(rules: dict[str, Any], path: str, mode: str) -> bool:
-    """mode is 'read' or 'write'."""
+    """mode is 'read' or 'write'.
+
+    Normalizes the candidate path with posixpath.normpath before matching so
+    `/var/log/../../etc/shadow` cannot slip past `/var/log/**` allow patterns.
+    Targets are POSIX, so posixpath is correct regardless of controller OS.
+    """
+    norm = posixpath.normpath(path) if path else path
     key = "read_file" if mode == "read" else "write_file"
     for pat in rules["deny"].get(key, []):
-        if fnmatch.fnmatch(path, pat) or pat == "**":
+        if fnmatch.fnmatch(norm, pat) or pat == "**":
             return False
-    return any(fnmatch.fnmatch(path, pat) or pat == "**" for pat in rules["allow"].get(key, []))
+    return any(fnmatch.fnmatch(norm, pat) or pat == "**" for pat in rules["allow"].get(key, []))
 
 
 def is_python_import_allowed(rules: dict[str, Any], module: str) -> bool:
