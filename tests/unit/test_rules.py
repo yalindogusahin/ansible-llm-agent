@@ -98,6 +98,30 @@ def test_is_path_allowed_deny_overrides():
     assert rmod.is_path_allowed(rules, "/etc/hosts", "read") is True
 
 
+def test_is_path_allowed_blocks_traversal_escape():
+    """A `..`-laden path must not slip past a narrower allow pattern. Without
+    normalization, `/var/log/../../etc/shadow` would fnmatch `/var/log/**` and
+    pass; with normalization it resolves to `/etc/shadow` and fails."""
+    rules = rmod.merge([_layer(allow={"read_file": ["/var/log/**"]})])
+    assert rmod.is_path_allowed(rules, "/var/log/../../etc/shadow", "read") is False
+
+
+def test_is_path_allowed_traversal_still_caught_by_deny():
+    """Even when allow is broad, normalization lets a deny match a traversal path."""
+    rules = rmod.merge(
+        [
+            _layer(allow={"read_file": ["/**"]}),
+            _layer(deny={"read_file": ["/etc/shadow"]}),
+        ]
+    )
+    assert rmod.is_path_allowed(rules, "/var/log/../../etc/shadow", "read") is False
+
+
+def test_is_path_allowed_normalizes_redundant_slashes():
+    rules = rmod.merge([_layer(allow={"read_file": ["/etc/hosts"]})])
+    assert rmod.is_path_allowed(rules, "/etc//hosts", "read") is True
+
+
 def test_is_python_import_allowed_supports_dotted_prefix():
     rules = rmod.merge([_layer(allow={"python": ["os.path"]})])
     assert rmod.is_python_import_allowed(rules, "os.path") is True

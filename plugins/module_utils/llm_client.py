@@ -223,11 +223,15 @@ class BedrockClient(LLMClient):
     def complete(self, system, messages, tools, max_tokens):
         try:
             import boto3
+            from botocore.config import Config
         except ImportError as e:
             raise LLMError("bedrock provider requires boto3") from e
 
         region = os.environ.get("AWS_REGION") or os.environ.get("AWS_DEFAULT_REGION") or "us-east-1"
-        client = boto3.client("bedrock-runtime", region_name=region)
+        # Honor self.timeout for both connect and read; otherwise boto3 inherits
+        # its 60s read default and ignores the LLMClient timeout entirely.
+        cfg = Config(connect_timeout=self.timeout, read_timeout=self.timeout, retries={"max_attempts": 1})
+        client = boto3.client("bedrock-runtime", region_name=region, config=cfg)
         body: dict[str, Any] = {
             "anthropic_version": "bedrock-2023-05-31",
             "max_tokens": max_tokens,
@@ -327,7 +331,13 @@ def _to_openai_tools(tools: list[dict[str, Any]]) -> list[dict[str, Any]]:
 
 
 def _parse_openai_response(payload: dict[str, Any]) -> Completion:
-    choice = payload["choices"][0]
+    choices = payload.get("choices") or []
+    if not choices:
+        # vLLM and some OpenAI-compatible servers can return an empty choices
+        # array on filter or quota events; surface a clean Completion instead
+        # of crashing with KeyError.
+        return Completion(stop_reason=str(payload.get("error", "")) or "no_choices")
+    choice = choices[0] or {}
     msg = choice.get("message", {}) or {}
     text = msg.get("content") or ""
     tool_calls: list[ToolCall] = []

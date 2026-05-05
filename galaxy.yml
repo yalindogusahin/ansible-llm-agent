@@ -17,9 +17,15 @@ tags:
   - agent
   - investigation
 repository: https://github.com/yalindogusahin/ansible-ai-agent
+documentation: https://github.com/yalindogusahin/ansible-ai-agent#readme
+issues: https://github.com/yalindogusahin/ansible-ai-agent/issues
 build_ignore:
   - .git
   - .venv
   - __pycache__
   - "*.pyc"
+  - "*.tar.gz"
+  - .claude
+  - .pytest_cache
+  - .ruff_cache
   - tests/integration/.cache

@@ -126,6 +126,26 @@ def test_parse_openai_response_extracts_tool_calls():
     assert c.cache_read_tokens == 50
 
 
+def test_parse_openai_response_handles_empty_choices():
+    """vLLM/OpenAI-compatible servers can return empty choices on filter or
+    quota events; must not KeyError."""
+    c = lmod._parse_openai_response({"choices": [], "usage": {}})
+    assert c.text == ""
+    assert c.tool_calls == []
+    assert c.stop_reason == "no_choices"
+
+
+def test_parse_openai_response_handles_missing_choices_key():
+    c = lmod._parse_openai_response({})
+    assert c.text == ""
+    assert c.tool_calls == []
+
+
+def test_parse_openai_response_handles_null_first_choice():
+    c = lmod._parse_openai_response({"choices": [None], "usage": {}})
+    assert c.text == ""
+
+
 def test_parse_openai_response_handles_malformed_args():
     resp = {
         "choices": [
@@ -353,6 +373,39 @@ def test_claude_complete_body_marks_system_and_tools_for_caching(monkeypatch):
     assert body["system"][0]["cache_control"] == {"type": "ephemeral"}
     assert "cache_control" not in body["tools"][0]
     assert body["tools"][-1]["cache_control"] == {"type": "ephemeral"}
+
+
+def test_bedrock_passes_timeout_to_boto3_config(monkeypatch):
+    """BedrockClient must thread self.timeout through botocore Config so the
+    underlying invoke_model honors it; otherwise it inherits boto's 60s default."""
+    boto3 = pytest.importorskip("boto3")
+    captured: dict[str, Any] = {}
+
+    def fake_client(name, region_name=None, config=None):  # noqa: ARG001
+        captured["config"] = config
+
+        class _C:
+            def invoke_model(self, **kw):  # noqa: ARG002
+                class _Body:
+                    def read(self):
+                        return json.dumps(
+                            {
+                                "content": [{"type": "text", "text": "ok"}],
+                                "usage": {"input_tokens": 1, "output_tokens": 1},
+                                "stop_reason": "end_turn",
+                            }
+                        ).encode()
+
+                return {"body": _Body()}
+
+        return _C()
+
+    monkeypatch.setattr(boto3, "client", fake_client)
+    client = lmod.BedrockClient(timeout=42)
+    client.complete("sys", [{"role": "user", "content": "hi"}], None, max_tokens=10)
+    cfg = captured["config"]
+    assert cfg.connect_timeout == 42
+    assert cfg.read_timeout == 42
 
 
 def test_post_json_retries_on_5xx(monkeypatch):

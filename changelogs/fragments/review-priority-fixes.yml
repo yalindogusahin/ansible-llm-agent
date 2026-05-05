@@ -1,0 +1,20 @@
+---
+security_fixes:
+  - >
+    rules.is_path_allowed normalizes the candidate path with posixpath.normpath
+    before fnmatch, so a ``..``-laden path like ``/var/log/../../etc/shadow``
+    no longer slips past a narrower allow pattern such as ``/var/log/**``.
+bugfixes:
+  - >
+    llm_client._parse_openai_response no longer KeyErrors when the response
+    carries an empty or missing ``choices`` array (vLLM and OpenAI-compatible
+    servers can return this on filter/quota events).
+  - >
+    llm_client.BedrockClient now threads self.timeout through botocore Config
+    (connect_timeout/read_timeout) so invoke_model actually honors the
+    LLMClient timeout instead of inheriting boto3's default.
+minor_changes:
+  - >
+    galaxy.yml: add ``issues`` and ``documentation`` URLs and extend
+    ``build_ignore`` (``.tar.gz``, ``.claude``, ``.pytest_cache``,
+    ``.ruff_cache``) so packaged artifacts stay clean.
