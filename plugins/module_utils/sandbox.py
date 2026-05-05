@@ -166,6 +166,40 @@ SUBPROCESS_FUNCS = {
     "os.spawnvp",
 }
 
+# Functions that always invoke a shell at runtime regardless of argv shape.
+# Even when argv[0] resolves to an allow-listed binary, the rest of the string
+# is interpreted by /bin/sh, so `os.system("ls; rm -rf /")` slips past the
+# run_cmd allowlist. Reject outright; subprocess.run with a list argv is the
+# safe replacement.
+ALWAYS_SHELL_FUNCS = frozenset({"os.system", "os.popen"})
+
+# subprocess.X variants that accept shell=True, which collapses argv into a
+# `/bin/sh -c <cmd>` invocation and defeats both the allowlist and the AST
+# walk. Tracked separately so we can keyword-check just these.
+SUBPROCESS_SHELLABLE = frozenset(
+    {
+        "subprocess.run",
+        "subprocess.Popen",
+        "subprocess.call",
+        "subprocess.check_call",
+        "subprocess.check_output",
+    }
+)
+
+# Attribute names that, when looked up via getattr/setattr with a literal
+# string, give the snippet indirect access to dangerous builtins or to the
+# Python object model (e.g. `__class__.__bases__[0].__subclasses__()` chains
+# used in classic Python sandbox escapes).
+DANGEROUS_ATTR_NAMES = DANGEROUS_BUILTINS | {
+    "__builtins__",
+    "__globals__",
+    "__class__",
+    "__bases__",
+    "__subclasses__",
+    "__mro__",
+    "__import__",
+}
+
 
 def validate_ast(code: str, rules: dict[str, Any]) -> None:
     """Static check for run_python tool. Raises SandboxViolation on first issue."""
@@ -193,12 +227,52 @@ def validate_ast(code: str, rules: dict[str, Any]) -> None:
         ):
             raise SandboxViolation(f"builtin not allowed: {node.id}", where=f"line {node.lineno}")
 
+        # Block direct __builtins__ name lookups; the only legitimate reason
+        # a snippet references this is to dig dangerous callables out of it
+        # (`getattr(__builtins__, "eval")` and friends).
+        if isinstance(node, ast.Name) and node.id == "__builtins__":
+            raise SandboxViolation("__builtins__ access blocked", where=f"line {node.lineno}")
+
         if isinstance(node, ast.Call):
             chain = None
             if isinstance(node.func, ast.Attribute):
                 chain = _resolve_attr_chain(node.func)
             elif isinstance(node.func, ast.Name):
                 chain = node.func.id
+
+            # getattr/setattr/hasattr with a literal-string second arg pointing
+            # at a dangerous name (eval, __import__, __class__, ...) is the
+            # standard sandbox-escape primitive. Reject it before dispatch.
+            if chain in {"getattr", "setattr", "hasattr"} and len(node.args) >= 2:
+                attr = _literal_str(node.args[1])
+                if attr is not None and attr in DANGEROUS_ATTR_NAMES:
+                    raise SandboxViolation(
+                        f"{chain}(..., {attr!r}) blocks indirect access to dangerous attribute",
+                        where=f"line {node.lineno}",
+                    )
+
+            if chain in ALWAYS_SHELL_FUNCS:
+                raise SandboxViolation(
+                    f"{chain} always invokes a shell; use subprocess.run with a list argv instead",
+                    where=f"line {node.lineno}",
+                )
+
+            if chain in SUBPROCESS_SHELLABLE:
+                for kw in node.keywords:
+                    if kw.arg != "shell":
+                        continue
+                    val = kw.value
+                    if isinstance(val, ast.Constant) and val.value is True:
+                        raise SandboxViolation(
+                            f"{chain}(..., shell=True) defeats the run_cmd allowlist",
+                            where=f"line {node.lineno}",
+                        )
+                    if not (isinstance(val, ast.Constant) and val.value is False):
+                        raise SandboxViolation(
+                            f"{chain}(shell=...) must be statically False",
+                            where=f"line {node.lineno}",
+                        )
+
             if chain in SUBPROCESS_FUNCS:
                 argv0 = _first_argv0(node)
                 if argv0 is None:
