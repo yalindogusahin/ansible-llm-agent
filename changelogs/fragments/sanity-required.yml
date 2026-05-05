@@ -1,0 +1,10 @@
+---
+minor_changes:
+  - >
+    ci: ``ansible-test sanity`` is now a required check. Drop
+    ``continue-on-error: true`` and add it to ``build`` job's ``needs`` list
+    so a sanity regression actually blocks merge instead of just annotating
+    the run. The remaining ``tests/sanity/ignore-2.20.txt`` entries
+    (``replace-urlopen`` on llm_client.py, ``missing-gplv3-license`` on the
+    modules) are intentional: the eval harness imports llm_client without
+    ansible loaded, and the collection ships under MIT not GPL.
