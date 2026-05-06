@@ -1,9 +1,0 @@
----
-minor_changes:
-  - >
-    examples/: add ``nginx`` and ``redis`` domains. nginx covers 5xx surge
-    investigation and config validation (``nginx -t`` + include-chain
-    trace). redis covers memory pressure (``INFO memory``, key-size
-    sampling, eviction policy review) and slow commands (``SLOWLOG`` +
-    ``CLIENT LIST`` + per-command stats). Each domain ships its own
-    ``rules.yml`` preset with diagnostic-only command allow-lists.

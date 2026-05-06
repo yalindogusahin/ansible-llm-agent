@@ -1,6 +1,6 @@
 namespace: yalindogusahin
 name: ansible_ai
-version: 0.3.4
+version: 0.4.0
 readme: README.md
 authors:
   - yalindogusahin
@@ -28,4 +28,5 @@ build_ignore:
   - .claude
   - .pytest_cache
   - .ruff_cache
+  - .ansible
   - tests/integration/.cache
