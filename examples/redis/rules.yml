@@ -1,0 +1,25 @@
+---
+# Redis domain rules. Adds redis-cli plus reads under the default log dir.
+#
+# redis-cli's safety is a prompt-level concern — the binary itself can run
+# destructive subcommands (FLUSHDB, FLUSHALL, SHUTDOWN, CONFIG SET). The
+# scenarios here only ask for read-only INFO/SLOWLOG/MEMORY/CLIENT/CLUSTER
+# subcommands. For hard enforcement, run against a replica.
+ansible_ai_rules:
+  allow:
+    run_cmd:
+      - redis-cli
+    read_file:
+      - /var/log/redis/**
+      - /etc/redis/**
+    write_file: []
+    python: []
+    network: false
+  deny:
+    run_cmd: []
+    read_file: []
+    write_file: []
+    python: []
+  budget:
+    max_iterations: 8
+    max_tokens: 20000

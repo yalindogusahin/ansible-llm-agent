@@ -1,0 +1,30 @@
+---
+# Clients seeing Redis latency. Agent pulls SLOWLOG, current client list,
+# and command stats to identify whether the issue is a single slow query, a
+# noisy client, or a global slowdown.
+- name: Diagnose Redis slow commands
+  hosts: "{{ target | default('localhost') }}"
+  gather_facts: false
+  vars_files:
+    - rules.yml
+  vars:
+    redis_host: "{{ host_arg | default('127.0.0.1') }}"
+    redis_port: "{{ port | default(6379) }}"
+  tasks:
+    - name: Investigate Redis slow commands and latency
+      yalindogusahin.ansible_ai.ai_agent:
+        prompt: >-
+          Clients are reporting Redis latency against
+          {{ redis_host }}:{{ redis_port }}. Pull `redis-cli -h
+          {{ redis_host }} -p {{ redis_port }} SLOWLOG GET 50` for the most
+          recent slow operations. Then `INFO commandstats` to see
+          per-command call counts and total time. Then `CLIENT LIST` to
+          identify the noisiest clients. Report whether the bottleneck is a
+          single recurring slow command (and which key/pattern), a single
+          noisy client, or a system-wide slowdown (high CPU on the redis
+          process — cross-check with `ps`). Conclude with one actionable
+          recommendation.
+        rules: "{{ ansible_ai_rules }}"
+        max_iterations: 8
+        max_tokens: 20000
+        print_result: true
