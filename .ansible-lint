@@ -9,6 +9,14 @@ skip_list:
   - var-naming[no-role-prefix]
   - sanity[cannot-ignore]
 
+# ansible-lint runs in its own venv and cannot resolve the FQCN of the
+# collection being linted (chicken-and-egg). Declaring our own modules as
+# mock makes syntax-check accept them without needing the collection
+# installed, so examples/ playbooks lint cleanly without exclusion.
+mock_modules:
+  - yalindogusahin.ansible_ai.ai_agent
+  - yalindogusahin.ansible_ai.ai_exec
+
 exclude_paths:
   - .git/
   - .venv/
