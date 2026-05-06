@@ -264,6 +264,16 @@ in a variable instead.
 
 ## Examples
 
+> See [`examples/`](examples/) for a growing cookbook of runnable
+> playbooks organized by domain (kafka, kubernetes, postgres, nginx,
+> redis, generic). Each domain ships its own `rules.yml` allow-list
+> preset you can drop into `group_vars/`, plus 1-2 scenario playbooks for
+> the most common symptoms. Six domains, twelve playbooks at last count.
+
+The inline examples below are concise illustrations of API shape; the
+`examples/` cookbook is for "I have this specific symptom, what playbook
+do I run?".
+
 **1. Single-line diagnosis on every host:**
 
 ```yaml
