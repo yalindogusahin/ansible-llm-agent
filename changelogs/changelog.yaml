@@ -121,3 +121,36 @@ releases:
         - "llm_client.BedrockClient now threads self.timeout through botocore Config (connect_timeout/read_timeout) so invoke_model actually honors the LLMClient timeout instead of inheriting boto3's default."
       minor_changes:
         - "galaxy.yml: add `issues` and `documentation` URLs and extend `build_ignore` (`*.tar.gz`, `.claude`, `.pytest_cache`, `.ruff_cache`) so packaged artifacts stay clean."
+
+  0.4.0:
+    release_date: "2026-05-06"
+    changes:
+      release_summary: |
+        Sandbox hardening, governance + cookbook release. AST validator now
+        categorically rejects `os.system`/`os.popen`, `subprocess.X(..., shell=True)`,
+        `getattr`/`setattr`/`hasattr` lookups of dangerous attribute names, and
+        bare `__builtins__` references — closing two real escapes the existing
+        Name-based check missed. `ansible-test sanity` is now a required CI
+        check. Ships an `examples/` cookbook with six domains (generic, kafka,
+        kubernetes, postgres, nginx, redis) and twelve scenario playbooks, plus
+        `CONTRIBUTING.md` and `RELEASING.md` covering the contribution and
+        release flows.
+
+        Backwards-incompatible: snippets that previously called `os.system(...)`
+        or `os.popen(...)` with an allow-listed first word will now be rejected
+        at AST validation. Replace with `subprocess.run([...])`.
+      security_fixes:
+        - "sandbox.validate_ast rejects `os.system` and `os.popen` outright. Both always invoke `/bin/sh` at runtime, so even when `argv[0]` resolved to an allow-listed binary, the rest of the string was interpreted by the shell and slipped commands past `run_cmd` (e.g. `os.system('ls; rm -rf /')` with `ls` allow-listed). Use `subprocess.run` with a list argv instead."
+        - "sandbox.validate_ast rejects `subprocess.X(..., shell=True)` (and any non-statically-False `shell=` kwarg) on `run`/`Popen`/`call`/`check_call`/`check_output`. `shell=True` collapses argv into `/bin/sh -c <cmd>` and bypasses both the allowlist and the AST walk."
+        - "sandbox.validate_ast rejects `getattr`/`setattr`/`hasattr` calls whose literal-string second argument is a dangerous attribute name (`eval`, `exec`, `__import__`, `__class__`, `__bases__`, `__subclasses__`, `__mro__`, `__globals__`, `__builtins__`). This is the canonical sandbox-escape primitive: the dangerous name is a string at the AST level, so the existing Name-based check missed it."
+        - "sandbox.validate_ast rejects bare references to `__builtins__`. Legitimate snippets never name it; the only reason to reach for it is to dig dangerous callables out of the namespace."
+      minor_changes:
+        - "tests/unit/test_sandbox.py: 11 new adversarial cases covering `shell=True`, `getattr(__builtins__, \"eval\")` indirection, `__builtins__` lookups, `os.system`/`os.popen` categorical rejection, nested-function `eval`, and aliased-builtin `eval`."
+        - "ci: `ansible-test sanity` is now a required check. Drop `continue-on-error: true` and add it to `build` job's `needs` list so a sanity regression actually blocks merge instead of just annotating the run."
+        - "examples/: domain-organized debugging cookbooks. Six domains — generic (disk pressure, OOM, failed systemd), kafka (broker down, consumer lag), kubernetes (pod CrashLoopBackOff, node NotReady), postgres (connection issues, slow queries / lock contention), nginx (5xx surge, config validation), redis (memory pressure, slow commands). Each domain ships a `rules.yml` allow-list preset and a README explaining the assumptions. Designed as copy-paste-and-edit starting points; rules can be loaded into `group_vars/` for permanent use."
+        - "docs: add `CONTRIBUTING.md` covering local dev setup, pre-commit / pytest workflow, branching + PR conventions, the changelog-fragment format, examples/ domain authoring, and security reporting."
+        - "docs: add `RELEASING.md` documenting the semver policy, the pre-1.0 caveat (minor bumps may include breaking changes until 1.0), the 1.0-onwards deprecation policy (two-minor support window before removal), the support matrix (ansible-core ≥2.15, Python 3.10-3.12), and the PR-driven release flow."
+        - "docs: README now points at the `examples/` cookbook above the inline API-shape examples, with a note on when to reach for which."
+        - "docs: CONTRIBUTING.md drops `trivial` from the recommended changelog-fragment section list — accepted by `antsibull-changelog` but rejected by the `ansible-test sanity` changelog rule (now a required check)."
+        - ".gitignore: add `.ruff_cache/` and `.ansible/` (ansible-lint's runtime cache)."
+        - ".ansible-lint: drop the `tests/integration/playbook_*.yml` exclude entries — the FQCN-resolution issue they worked around is now handled globally by `mock_modules`."
