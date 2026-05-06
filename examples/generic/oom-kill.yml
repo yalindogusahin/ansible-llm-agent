@@ -1,0 +1,21 @@
+---
+# OOM-kill investigation: pulls recent kernel OOM records and correlates with
+# current memory hogs. Useful when a service silently disappeared.
+- name: Investigate OOM-kills on the target hosts
+  hosts: "{{ target | default('localhost') }}"
+  gather_facts: false
+  vars_files:
+    - rules.yml
+  tasks:
+    - name: Find recent OOM kills and the likely culprit
+      yalindogusahin.ansible_ai.ai_agent:
+        prompt: >-
+          A process on this host may have been OOM-killed. Look at the kernel
+          ring buffer (dmesg) and journal for OOM-killer entries in the last
+          24h. List the killed processes with timestamps. Also report the
+          current top 5 memory consumers (ps) so we can see if the pattern is
+          repeating. Conclude with a one-line root cause.
+        rules: "{{ ansible_ai_rules }}"
+        max_iterations: 6
+        max_tokens: 12000
+        print_result: true

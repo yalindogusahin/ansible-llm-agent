@@ -1,0 +1,33 @@
+---
+# Postgres feels slow. Agent pulls pg_stat_activity for long-running queries
+# and lock waits, plus the recent log for slow-query entries (if
+# log_min_duration_statement is set).
+- name: Diagnose PostgreSQL slow queries / lock contention
+  hosts: "{{ target | default('localhost') }}"
+  gather_facts: false
+  vars_files:
+    - rules.yml
+  tasks:
+    - name: Investigate slow PostgreSQL queries and locks
+      yalindogusahin.ansible_ai.ai_agent:
+        prompt: >-
+          PostgreSQL on this host is reported slow. Pull
+          `psql -tAc "SELECT pid, now()-xact_start AS duration, state,
+          wait_event_type, wait_event, left(query, 200) FROM
+          pg_stat_activity WHERE state != 'idle' AND now()-xact_start >
+          interval '1 second' ORDER BY duration DESC LIMIT 10"` for currently
+          long-running queries. Then `psql -tAc "SELECT blocked_locks.pid AS
+          blocked_pid, blocking_locks.pid AS blocking_pid, blocked_activity.query
+          AS blocked_query FROM pg_catalog.pg_locks blocked_locks JOIN
+          pg_catalog.pg_stat_activity blocked_activity ON
+          blocked_activity.pid = blocked_locks.pid JOIN pg_catalog.pg_locks
+          blocking_locks ON blocking_locks.locktype = blocked_locks.locktype
+          AND blocking_locks.granted AND NOT blocked_locks.granted JOIN
+          pg_catalog.pg_stat_activity blocking_activity ON
+          blocking_activity.pid = blocking_locks.pid"` for lock waits.
+          Report whether the issue is a single runaway query, a lock chain,
+          or general load.
+        rules: "{{ ansible_ai_rules }}"
+        max_iterations: 10
+        max_tokens: 24000
+        print_result: true

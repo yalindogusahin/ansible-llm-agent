@@ -1,0 +1,23 @@
+---
+# Kafka broker is down or unreachable. Agent checks port, process, journal,
+# and recent log lines. Does not attempt restart — diagnostic only.
+- name: Diagnose Kafka broker down
+  hosts: "{{ target | default('localhost') }}"
+  gather_facts: false
+  vars_files:
+    - rules.yml
+  tasks:
+    - name: Investigate why the Kafka broker is not serving on 9092
+      yalindogusahin.ansible_ai.ai_agent:
+        prompt: >-
+          Kafka clients on this host can't reach the broker on port 9092.
+          Check whether port 9092 is listening (ss -tlnp), whether the kafka
+          JVM process is running (ps aux | grep -i kafka), what the kafka
+          journal shows in the last 10 minutes (journalctl -u kafka --since
+          '10 min ago'), and the tail of /var/log/kafka/server.log. Report
+          the most likely root cause in one line plus the supporting
+          evidence.
+        rules: "{{ ansible_ai_rules }}"
+        max_iterations: 8
+        max_tokens: 20000
+        print_result: true

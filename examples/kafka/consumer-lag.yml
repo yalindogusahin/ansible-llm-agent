@@ -1,0 +1,27 @@
+---
+# A consumer group is lagging. Agent enumerates partitions for the group,
+# identifies the high-lag ones, and checks whether brokers serving those
+# partitions are healthy.
+- name: Diagnose Kafka consumer-group lag
+  hosts: "{{ target | default('localhost') }}"
+  gather_facts: false
+  vars_files:
+    - rules.yml
+  vars:
+    consumer_group: "{{ group | default('my-consumer-group') }}"
+    bootstrap: "{{ bootstrap_server | default('localhost:9092') }}"
+  tasks:
+    - name: Investigate lag for consumer group {{ consumer_group }}
+      yalindogusahin.ansible_ai.ai_agent:
+        prompt: >-
+          The Kafka consumer group `{{ consumer_group }}` is lagging. Use
+          `kafka-consumer-groups.sh --bootstrap-server {{ bootstrap }}
+          --describe --group {{ consumer_group }}` to list partition lag.
+          Identify the top 3 partitions by lag, check whether the brokers
+          serving those partitions are healthy (port 9092 listening, journal
+          clean), and report whether the bottleneck is consumer-side
+          (slow processing) or broker-side (under-replicated, GC, disk).
+        rules: "{{ ansible_ai_rules }}"
+        max_iterations: 10
+        max_tokens: 24000
+        print_result: true

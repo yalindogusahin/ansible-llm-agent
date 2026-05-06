@@ -1,0 +1,23 @@
+---
+# Generic baseline — empty additive layer. The real allow/deny list comes
+# from the collection defaults (roles/ai_agent/defaults/main.yml), which
+# already cover ps/ss/cat/grep/journalctl/df/du-style commands and read
+# access to /var/log, /proc, /etc, /sys, /run.
+#
+# Override max_iterations / max_tokens here if the generic scenarios need
+# more headroom than the default budget.
+ansible_ai_rules:
+  allow:
+    run_cmd: []
+    read_file: []
+    write_file: []
+    python: []
+    network: false
+  deny:
+    run_cmd: []
+    read_file: []
+    write_file: []
+    python: []
+  budget:
+    max_iterations: 6
+    max_tokens: 12000

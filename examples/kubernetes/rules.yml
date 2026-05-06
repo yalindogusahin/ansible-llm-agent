@@ -1,0 +1,27 @@
+---
+# Kubernetes domain rules. Adds kubectl + crictl on top of the collection
+# defaults. Read access extended to pod / container logs and kubeconfig.
+ansible_ai_rules:
+  allow:
+    run_cmd:
+      - kubectl
+      - crictl
+      - ctr
+      - runc
+    read_file:
+      - /var/log/pods/**
+      - /var/log/containers/**
+      - /etc/kubernetes/**
+      - /var/lib/kubelet/**
+      - /run/containerd/**
+    write_file: []
+    python: []
+    network: false
+  deny:
+    run_cmd: []
+    read_file: []
+    write_file: []
+    python: []
+  budget:
+    max_iterations: 8
+    max_tokens: 20000

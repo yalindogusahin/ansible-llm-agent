@@ -1,0 +1,10 @@
+---
+minor_changes:
+  - >
+    examples/: domain-organized debugging cookbooks. Four domains so far —
+    generic (disk pressure, OOM, failed systemd), kafka (broker down,
+    consumer lag), kubernetes (pod CrashLoopBackOff, node NotReady),
+    postgres (connection issues, slow queries / lock contention). Each
+    domain ships a ``rules.yml`` preset and a README explaining the
+    assumptions. Designed as copy-paste-and-edit starting points; rules can
+    be loaded into ``group_vars/`` for permanent use.

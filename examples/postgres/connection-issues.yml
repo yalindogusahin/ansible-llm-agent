@@ -1,0 +1,24 @@
+---
+# Postgres clients getting connection refused or "too many clients". Agent
+# checks the listener, max_connections, and current pool usage.
+- name: Diagnose PostgreSQL connection issues
+  hosts: "{{ target | default('localhost') }}"
+  gather_facts: false
+  vars_files:
+    - rules.yml
+  tasks:
+    - name: Investigate why clients can't connect to PostgreSQL
+      yalindogusahin.ansible_ai.ai_agent:
+        prompt: >-
+          Clients are getting connection errors against PostgreSQL on this
+          host. Check (1) `pg_isready` to confirm the server is accepting
+          connections, (2) `ss -tlnp` for the listener on port 5432,
+          (3) `psql -tAc 'SHOW max_connections'` and
+          `psql -tAc 'SELECT count(*) FROM pg_stat_activity'` to compare
+          configured vs in-use connections, (4) tail of the PostgreSQL log
+          for connection-related ERRORs in the last 5 minutes. Report whether
+          the bottleneck is server-down, pool-exhausted, auth, or network.
+        rules: "{{ ansible_ai_rules }}"
+        max_iterations: 8
+        max_tokens: 20000
+        print_result: true
