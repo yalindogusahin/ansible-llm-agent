@@ -1,0 +1,14 @@
+---
+trivial:
+  - >
+    .gitignore: add ``.ruff_cache/`` and ``.ansible/`` (ansible-lint's
+    runtime cache).
+  - >
+    Remove stale ``yalindogusahin-ansible_ai-0.3.1.tar.gz`` left over from
+    an old local build. The file was already ``.gitignore``d and not
+    tracked, just lingering on disk.
+  - >
+    .ansible-lint: drop the ``tests/integration/playbook_*.yml`` exclude
+    entries — the FQCN-resolution issue they worked around is now handled
+    globally by ``mock_modules`` (added with the examples/ cookbook), so
+    the integration playbooks lint cleanly under their own task-name fix.

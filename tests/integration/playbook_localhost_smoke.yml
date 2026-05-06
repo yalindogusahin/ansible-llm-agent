@@ -15,7 +15,7 @@
 #     -e endpoint=http://127.0.0.1:8000/v1 \
 #     -e api_key=dummy \
 #     -e model=my-local-model
-- name: ai_agent localhost smoke
+- name: Localhost smoke for ai_agent
   hosts: localhost
   connection: local
   gather_facts: false
