@@ -1,0 +1,33 @@
+---
+# Kafka domain rules. Adds the read-only Kafka admin scripts on top of the
+# collection's default allow list. Stateful tools (`kafka-delete-records`,
+# `kafka-reassign-partitions`) are deliberately not allowed — this preset is
+# diagnostic-only.
+ansible_ai_rules:
+  allow:
+    run_cmd:
+      - kafka-topics
+      - kafka-topics.sh
+      - kafka-consumer-groups
+      - kafka-consumer-groups.sh
+      - kafka-broker-api-versions
+      - kafka-broker-api-versions.sh
+      - kafka-log-dirs
+      - kafka-log-dirs.sh
+      - jstack
+      - jcmd
+    read_file:
+      - /var/log/kafka/**
+      - /opt/kafka/**
+      - /etc/kafka/**
+    write_file: []
+    python: []
+    network: false
+  deny:
+    run_cmd: []
+    read_file: []
+    write_file: []
+    python: []
+  budget:
+    max_iterations: 8
+    max_tokens: 20000

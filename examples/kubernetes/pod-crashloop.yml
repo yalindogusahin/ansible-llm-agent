@@ -1,0 +1,26 @@
+---
+# A pod is stuck in CrashLoopBackOff. Agent pulls describe + events +
+# previous-container logs to identify the crash cause.
+- name: Diagnose Kubernetes pod CrashLoopBackOff
+  hosts: "{{ target | default('localhost') }}"
+  gather_facts: false
+  vars_files:
+    - rules.yml
+  vars:
+    pod_namespace: "{{ namespace | default('default') }}"
+    pod_name: "{{ pod | default('my-app') }}"
+  tasks:
+    - name: Investigate crashloop for pod {{ pod_namespace ~ '/' ~ pod_name }}
+      yalindogusahin.ansible_ai.ai_agent:
+        prompt: >-
+          Pod `{{ pod_name }}` in namespace `{{ pod_namespace }}` is in
+          CrashLoopBackOff. Use `kubectl -n {{ pod_namespace }} describe pod
+          {{ pod_name }}` for events and conditions, then
+          `kubectl -n {{ pod_namespace }} logs {{ pod_name }} --previous
+          --tail=200` for the last container's stdout/stderr. If the pod has
+          multiple containers, repeat for each. Report the exit code,
+          restart count, and the line(s) in the logs that explain the crash.
+        rules: "{{ ansible_ai_rules }}"
+        max_iterations: 8
+        max_tokens: 20000
+        print_result: true

@@ -1,0 +1,21 @@
+---
+# Disk-pressure investigation: which mount is filling, and what is consuming
+# it? Asks the agent to start broad (df) then drill down (du) into the worst
+# mount. Read-only.
+- name: Find what is consuming disk on the target hosts
+  hosts: "{{ target | default('localhost') }}"
+  gather_facts: false
+  vars_files:
+    - rules.yml
+  tasks:
+    - name: Investigate disk pressure
+      yalindogusahin.ansible_ai.ai_agent:
+        prompt: >-
+          Disk space alert on this host. Identify which mount is most full,
+          then find the top space consumers under that mount (directories or
+          large files). Report the mount, top 5 consumers with sizes, and a
+          one-line root cause.
+        rules: "{{ ansible_ai_rules }}"
+        max_iterations: 6
+        max_tokens: 12000
+        print_result: true

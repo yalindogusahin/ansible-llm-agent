@@ -1,0 +1,24 @@
+---
+# Failed-unit investigation: list units in `failed` state and pull recent
+# journal lines for each so the agent can diagnose. systemctl is denied by
+# default (state-changing), but `systemctl --state=failed` and the journal
+# read are covered by the allowed `journalctl` command and `/run/systemd/`
+# reads.
+- name: Diagnose failed systemd units on the target hosts
+  hosts: "{{ target | default('localhost') }}"
+  gather_facts: false
+  vars_files:
+    - rules.yml
+  tasks:
+    - name: Find and explain failed systemd units
+      yalindogusahin.ansible_ai.ai_agent:
+        prompt: >-
+          List systemd units currently in `failed` state on this host (use
+          `journalctl` and read /run/systemd state files; do not invoke
+          systemctl). For each failed unit, pull the last 50 journal lines
+          and report what crashed and the apparent reason. Conclude with a
+          per-unit one-line root cause.
+        rules: "{{ ansible_ai_rules }}"
+        max_iterations: 8
+        max_tokens: 16000
+        print_result: true

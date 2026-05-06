@@ -1,0 +1,32 @@
+---
+# PostgreSQL domain rules. Adds psql / pg_isready and reads under the common
+# log + config dirs.
+#
+# psql is a powerful binary — the rule layer permits the binary itself, but
+# the read-only nature of investigations comes from the prompts (catalog
+# views, pg_stat_*). Use a SELECT-only role if you need hardware enforcement.
+ansible_ai_rules:
+  allow:
+    run_cmd:
+      - psql
+      - pg_isready
+      - pg_controldata
+    read_file:
+      - /var/log/postgresql/**
+      - /var/lib/pgsql/**
+      - /etc/postgresql/**
+    write_file: []
+    python: []
+    network: false
+  deny:
+    run_cmd:
+      - pg_dump
+      - pg_dumpall
+      - pg_restore
+      - pg_basebackup
+    read_file: []
+    write_file: []
+    python: []
+  budget:
+    max_iterations: 8
+    max_tokens: 20000

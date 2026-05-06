@@ -1,0 +1,23 @@
+---
+# Node has gone NotReady. Agent walks kubelet status, container runtime,
+# CNI, and disk pressure to identify which subsystem broke.
+- name: Diagnose Kubernetes node NotReady
+  hosts: "{{ target | default('localhost') }}"
+  gather_facts: false
+  vars_files:
+    - rules.yml
+  tasks:
+    - name: Investigate why this node is NotReady
+      yalindogusahin.ansible_ai.ai_agent:
+        prompt: >-
+          This Kubernetes node is reporting NotReady. Check, in order:
+          (1) kubelet journal for errors (journalctl -u kubelet --since
+          '15 min ago'), (2) container runtime health (crictl info, crictl
+          ps for stuck containers), (3) CNI plugin state (look for cni0 / flannel
+          / calico interfaces with `ip a`, kubelet logs for CNI errors),
+          (4) disk pressure (df -h on /, /var/lib/kubelet, /var/lib/containerd).
+          Report which subsystem is broken with one supporting log line.
+        rules: "{{ ansible_ai_rules }}"
+        max_iterations: 10
+        max_tokens: 24000
+        print_result: true
