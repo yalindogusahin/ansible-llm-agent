@@ -1,0 +1,24 @@
+---
+# host2 redefines ansible_ai_rules entirely — Ansible's default
+# hash_behaviour=replace overwrites group_vars/cluster.yml on this host
+# rather than deep-merging. We still need `uname` for the stub's run_cmd
+# to be allowed; we add `hostname` on top so the test can prove host2 sees
+# its own override (allow.run_cmd has BOTH commands here, while host1 and
+# host3 see only `uname` from group_vars).
+ansible_ai_rules:
+  allow:
+    run_cmd:
+      - uname
+      - hostname
+    read_file: []
+    write_file: []
+    python: []
+    network: false
+  deny:
+    run_cmd: []
+    read_file: []
+    write_file: []
+    python: []
+  budget:
+    max_iterations: 3
+    max_tokens: 4000

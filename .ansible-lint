@@ -8,6 +8,11 @@
 skip_list:
   - var-naming[no-role-prefix]
   - sanity[cannot-ignore]
+  # `run_once` is the documented pattern for ai_agent's aggregate mode
+  # (one LLM call synthesizing per-host results, paired with
+  # delegate_to: localhost). The lint warning is about strategy=free,
+  # which we don't use; the rule is over-eager for our case.
+  - run-once[task]
 
 # ansible-lint runs in its own venv and cannot resolve the FQCN of the
 # collection being linted (chicken-and-egg). Declaring our own modules as

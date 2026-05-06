@@ -1,0 +1,18 @@
+---
+minor_changes:
+  - >
+    tests/integration/multi_host/: end-to-end fan-out test against the
+    stub LLM. Three localhost-aliased "hosts" exercise per-host rule
+    precedence (group_vars vs host_vars under Ansible's default
+    ``hash_behaviour=replace``), per-host ``save_transcript`` writes via
+    the ``{host}`` substitution, and ``aggregate: true`` cluster-level
+    synthesis. New ``integration-multi-host`` job wired into the CI build
+    gate.
+  - >
+    tests/integration/stub_llm.py: rewritten stateless. Was using a
+    server-side counter to decide which response to return, which
+    interleaved badly when multiple hosts hit it concurrently. Now
+    classifies each request by whether its body contains a ``tool_result``
+    block, so concurrent multi-host playbooks each see a coherent
+    two-turn dialog. Switched to ``ThreadingHTTPServer`` so multi-host
+    fan-out doesn't serialize on the stub.

@@ -1,0 +1,124 @@
+---
+# Multi-host integration test. Three localhost aliases (host1/host2/host3)
+# fan-out the agent against the same stub LLM, each with potentially
+# different layered rules, and write a per-host transcript via the
+# `{host}` substitution. A second play runs in aggregate mode (run_once,
+# delegate_to: localhost) to synthesize the cluster-wide diagnosis.
+#
+# Asserts:
+#   - all three hosts produce a diagnosis
+#   - host_vars/host2.yml allow list merged on top of group_vars
+#   - {host} in save_transcript expanded to inventory_hostname per host
+#   - all three transcript files exist on disk
+#   - aggregate play returns a single synthesized diagnosis covering all hosts
+- name: Fan-out the ai_agent across the cluster
+  hosts: cluster
+  gather_facts: false
+  tasks:
+    - name: Run ai_agent on every host with per-host transcript
+      yalindogusahin.ansible_ai.ai_agent:
+        prompt: "Print the kernel version using `uname -r`, then stop."
+        provider: "{{ provider | default('claude') }}"
+        model: "{{ model | default('stub-claude') }}"
+        endpoint: "{{ endpoint | default('http://127.0.0.1:8765') }}"
+        api_key: "{{ api_key | default('stub') }}"
+        rules: "{{ ansible_ai_rules }}"
+        save_transcript: "{{ transcript_dir }}/{host}.json"
+        max_iterations: 3
+        max_tokens: 4000
+        timeout: 10
+      register: agent
+
+    # Per Ansible's default hash_behaviour=replace, host_vars/host2.yml
+    # overwrites group_vars/cluster.yml wholesale instead of merging.
+    # The action plugin then sees task_vars["ansible_ai_rules"] already
+    # resolved to a single dict per host. This is intentional Ansible
+    # idiom — users wanting deep-merge can either set
+    # `hash_behaviour=merge` in ansible.cfg or pass an explicitly merged
+    # dict via the task-level `rules:` arg.
+    - name: Confirm host_vars overrides group_vars on host2
+      ansible.builtin.assert:
+        that:
+          - "ansible_ai_rules.allow.run_cmd == ['uname', 'hostname']"
+        fail_msg: >-
+          Expected host_vars on host2 to replace group_vars entirely.
+          rendered={{ ansible_ai_rules }}
+      when: inventory_hostname == 'host2'
+
+    - name: Confirm group_vars allow list applies on host1 / host3
+      ansible.builtin.assert:
+        that:
+          - "ansible_ai_rules.allow.run_cmd == ['uname']"
+        fail_msg: >-
+          host1/host3 allow list unexpectedly differs.
+          rendered={{ ansible_ai_rules }}
+      when: inventory_hostname in ['host1', 'host3']
+
+    - name: Confirm agent converged with a diagnosis on every host
+      ansible.builtin.assert:
+        that:
+          - agent.diagnosis is defined
+          - agent.diagnosis | length > 0
+          - agent.iterations_used >= 1
+        fail_msg: >-
+          Agent did not converge on {{ inventory_hostname }}.
+          transcript={{ agent.transcript | default([]) }}
+
+- name: Verify per-host transcripts landed on disk
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Stat each host's transcript
+      ansible.builtin.stat:
+        path: "{{ transcript_dir }}/{{ item }}.json"
+      register: transcripts
+      loop: [host1, host2, host3]
+
+    - name: Assert all three transcripts exist
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+          - item.stat.size > 0
+        fail_msg: "Missing or empty transcript: {{ item.invocation.module_args.path }}"
+      loop: "{{ transcripts.results }}"
+      loop_control:
+        label: "{{ item.invocation.module_args.path }}"
+
+- name: Cluster-aggregate synthesis play
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Build per-host result map for aggregate input
+      ansible.builtin.set_fact:
+        per_host_results: >-
+          {{
+            dict(groups['cluster'] | zip(groups['cluster']
+              | map('extract', hostvars, 'agent')))
+          }}
+
+    - name: Aggregate cluster diagnosis through one LLM call
+      yalindogusahin.ansible_ai.ai_agent:
+        prompt: "Summarize the kernel-version reports from the cluster."
+        provider: "{{ provider | default('claude') }}"
+        model: "{{ model | default('stub-claude') }}"
+        endpoint: "{{ endpoint | default('http://127.0.0.1:8765') }}"
+        api_key: "{{ api_key | default('stub') }}"
+        aggregate: true
+        results: "{{ per_host_results }}"
+        max_iterations: 2
+        max_tokens: 4000
+        timeout: 10
+      register: cluster_summary
+      run_once: true
+
+    - name: Assert aggregate produced a synthesized diagnosis
+      ansible.builtin.assert:
+        that:
+          - cluster_summary.diagnosis is defined
+          - cluster_summary.diagnosis | length > 0
+          - cluster_summary.host_count == 3
+        fail_msg: >-
+          Aggregate mode did not synthesize a cluster diagnosis.
+          result={{ cluster_summary }}

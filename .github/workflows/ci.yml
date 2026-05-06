@@ -107,10 +107,45 @@ jobs:
             -e api_key=stub \
             -e model=stub-claude
 
+  integration-multi-host:
+    name: integration multi-host fan-out (stub LLM)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
+        with:
+          path: ansible_collections/yalindogusahin/ansible_ai
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
+        with:
+          python-version: "3.12"
+      - name: Install ansible-core
+        run: pip install ansible-core
+      - name: Start scripted-LLM stub
+        working-directory: ansible_collections/yalindogusahin/ansible_ai
+        run: |
+          python tests/integration/stub_llm.py 8766 &
+          for _ in $(seq 1 20); do
+            curl -sf -o /dev/null -X POST http://127.0.0.1:8766 -d '{}' && break
+            sleep 0.5
+          done
+      - name: Run multi-host fan-out playbook against stub
+        working-directory: ansible_collections/yalindogusahin/ansible_ai
+        env:
+          ANSIBLE_COLLECTIONS_PATH: ${{ github.workspace }}
+          ANTHROPIC_API_KEY: stub
+        run: |
+          mkdir -p /tmp/ansible-ai-mh
+          ansible-playbook \
+            -i tests/integration/multi_host/inventory.ini \
+            tests/integration/multi_host/playbook.yml \
+            -e endpoint=http://127.0.0.1:8766 \
+            -e api_key=stub \
+            -e model=stub-claude \
+            -e transcript_dir=/tmp/ansible-ai-mh
+
   build:
     name: ansible-galaxy build
     runs-on: ubuntu-latest
-    needs: [lint, test, security, sanity, integration]
+    needs: [lint, test, security, sanity, integration, integration-multi-host]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd  # v6.0.2
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405  # v6.2.0
