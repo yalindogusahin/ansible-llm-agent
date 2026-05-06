@@ -72,9 +72,16 @@ breaking_changes:
 
 Sections (in canonical order): `release_summary`, `major_changes`,
 `minor_changes`, `breaking_changes`, `deprecated_features`,
-`removed_features`, `security_fixes`, `bugfixes`, `known_issues`,
-`trivial`. Lines stay under 160 chars (yamllint enforces this). Use
-``>`` block scalars for prose to wrap cleanly.
+`removed_features`, `security_fixes`, `bugfixes`, `known_issues`. Lines
+stay under 160 chars (yamllint enforces this). Use ``>`` block scalars
+for prose to wrap cleanly.
+
+> **Don't use the `trivial` section.** `antsibull-changelog` accepts it
+> (it's even configured in `changelogs/config.yaml`), but the
+> `ansible-test sanity` changelog rule rejects it and we run sanity as a
+> required check. Use `minor_changes` for small user-visible cleanups,
+> or skip the fragment entirely for repo-internal-only churn (CI tweaks
+> the user will never see).
 
 Fragments are consumed by `antsibull-changelog` at release time and
 folded into `changelogs/changelog.yaml`. **Don't** edit
