@@ -27,6 +27,10 @@ layered rule merge — domain `rules.yml` files only **add** allow entries
 | **kubernetes** | Node NotReady | [kubernetes/node-not-ready.yml](kubernetes/node-not-ready.yml) |
 | **postgres** | Connection refused / pool exhausted | [postgres/connection-issues.yml](postgres/connection-issues.yml) |
 | **postgres** | Slow queries / lock contention | [postgres/slow-queries.yml](postgres/slow-queries.yml) |
+| **nginx** | 5xx surge | [nginx/5xx-surge.yml](nginx/5xx-surge.yml) |
+| **nginx** | Config validation / reload broken | [nginx/config-validation.yml](nginx/config-validation.yml) |
+| **redis** | Memory pressure / eviction | [redis/memory-pressure.yml](redis/memory-pressure.yml) |
+| **redis** | Slow commands / latency | [redis/slow-commands.yml](redis/slow-commands.yml) |
 
 ## Running an example
 

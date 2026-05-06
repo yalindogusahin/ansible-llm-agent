@@ -1,0 +1,25 @@
+---
+# 5xx error rate is spiking. Agent walks the error log to classify the
+# failures (upstream timeout, upstream refused, config error, rate limit)
+# and reports the dominant category plus the top offending upstream.
+- name: Diagnose nginx 5xx surge
+  hosts: "{{ target | default('localhost') }}"
+  gather_facts: false
+  vars_files:
+    - rules.yml
+  tasks:
+    - name: Investigate the source of nginx 5xx errors
+      yalindogusahin.ansible_ai.ai_agent:
+        prompt: >-
+          nginx is returning 5xx at an unusual rate on this host. Pull the
+          last 500 lines from /var/log/nginx/error.log and the last 1000
+          from /var/log/nginx/access.log. Classify the errors: upstream
+          timeouts, upstream connection refused, upstream 5xx, config
+          errors, rate-limited (429), or worker crashes. Report the
+          dominant category, the upstream(s) involved, and a one-line root
+          cause hypothesis. Cross-check with `journalctl -u nginx --since
+          '15 min ago'` for any worker restarts.
+        rules: "{{ ansible_ai_rules }}"
+        max_iterations: 8
+        max_tokens: 20000
+        print_result: true

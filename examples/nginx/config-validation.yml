@@ -1,0 +1,24 @@
+---
+# A config change is suspected to have broken nginx. Agent runs `nginx -t`,
+# inspects the include chain, and identifies which file likely caused the
+# regression.
+- name: Validate nginx config and trace include chain
+  hosts: "{{ target | default('localhost') }}"
+  gather_facts: false
+  vars_files:
+    - rules.yml
+  tasks:
+    - name: Investigate nginx config validity
+      yalindogusahin.ansible_ai.ai_agent:
+        prompt: >-
+          Validate the nginx configuration on this host with `nginx -t` and
+          report whether it parses. If it fails, identify the offending file
+          and line, and read enough context around it to explain what's
+          wrong. List every active config file (the include chain rooted at
+          /etc/nginx/nginx.conf, plus /etc/nginx/conf.d/ and
+          /etc/nginx/sites-enabled/). Report the validity result and, if
+          invalid, the specific fix.
+        rules: "{{ ansible_ai_rules }}"
+        max_iterations: 6
+        max_tokens: 16000
+        print_result: true

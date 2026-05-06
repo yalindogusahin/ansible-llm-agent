@@ -1,0 +1,23 @@
+---
+# nginx domain rules. Adds `nginx -t` (read-only config check) plus reads
+# under the standard log + config dirs. State-changing nginx subcommands
+# (`-s reload`, `-s stop`, `-s reopen`) are not part of this preset.
+ansible_ai_rules:
+  allow:
+    run_cmd:
+      - nginx
+      - openresty
+    read_file:
+      - /var/log/nginx/**
+      - /etc/nginx/**
+    write_file: []
+    python: []
+    network: false
+  deny:
+    run_cmd: []
+    read_file: []
+    write_file: []
+    python: []
+  budget:
+    max_iterations: 8
+    max_tokens: 20000

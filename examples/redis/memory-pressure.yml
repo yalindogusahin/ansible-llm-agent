@@ -1,0 +1,28 @@
+---
+# Redis instance close to maxmemory or evicting. Agent reports current
+# memory usage, eviction policy, and which key patterns dominate.
+- name: Diagnose Redis memory pressure
+  hosts: "{{ target | default('localhost') }}"
+  gather_facts: false
+  vars_files:
+    - rules.yml
+  vars:
+    redis_host: "{{ host_arg | default('127.0.0.1') }}"
+    redis_port: "{{ port | default(6379) }}"
+  tasks:
+    - name: Investigate Redis memory usage
+      yalindogusahin.ansible_ai.ai_agent:
+        prompt: >-
+          Redis on {{ redis_host }}:{{ redis_port }} is under memory
+          pressure. Use `redis-cli -h {{ redis_host }} -p {{ redis_port }}
+          INFO memory` to report `used_memory_human`, `maxmemory_human`,
+          `mem_fragmentation_ratio`, and current eviction policy. Then
+          `INFO keyspace` for db sizes, and `--bigkeys --memkeys` (or
+          `MEMORY USAGE <key>` on a sample of keys from `--scan`) to find
+          the largest consumers. Report the headroom remaining, the top 3
+          memory-hungry key patterns, and whether the eviction policy is
+          appropriate for this workload.
+        rules: "{{ ansible_ai_rules }}"
+        max_iterations: 8
+        max_tokens: 20000
+        print_result: true
